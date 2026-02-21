@@ -1,5 +1,6 @@
 (* process -- safe process spawning with linear child handles *)
 (* Linear child must be waited on. Pipes are linear fds from file package. *)
+(* Type-indexed: pipe_new in config guarantees fd in result. *)
 
 #include "share/atspre_staload.hats"
 
@@ -19,17 +20,17 @@ $UNSAFE begin
 #include <fcntl.h>
 #include <string.h>
 
-/* Spawn result struct passed back to ATS */
 typedef struct {
   int pid;
-  int stdin_parent_fd;   /* parent writes here (-1 if not piped) */
-  int stdout_parent_fd;  /* parent reads here (-1 if not piped) */
-  int stderr_parent_fd;  /* parent reads here (-1 if not piped) */
+  int stdin_parent_fd;
+  int stdout_parent_fd;
+  int stderr_parent_fd;
 } _spawn_result_t;
 
-/* Stream config: 0=pipe, 1=inherit(fd), 2=devnull */
+/* Global to pass result back (avoids returning struct by value issues) */
+static _spawn_result_t _spawn_res;
 
-static _spawn_result_t _proc_spawn(
+static int _proc_spawn(
   const char *path,
   const char *argv_buf, int argv_count,
   const char *envp_buf, int envp_count,
@@ -37,35 +38,32 @@ static _spawn_result_t _proc_spawn(
   int stdout_mode, int stdout_fd,
   int stderr_mode, int stderr_fd
 ) {
-  _spawn_result_t res;
-  res.pid = -1;
-  res.stdin_parent_fd = -1;
-  res.stdout_parent_fd = -1;
-  res.stderr_parent_fd = -1;
+  _spawn_res.pid = -1;
+  _spawn_res.stdin_parent_fd = -1;
+  _spawn_res.stdout_parent_fd = -1;
+  _spawn_res.stderr_parent_fd = -1;
 
-  /* Set up pipes as needed */
   int stdin_pipe[2] = {-1, -1};
   int stdout_pipe[2] = {-1, -1};
   int stderr_pipe[2] = {-1, -1};
 
   if (stdin_mode == 0) {
-    if (pipe(stdin_pipe) < 0) return res;
+    if (pipe(stdin_pipe) < 0) return -1;
   }
   if (stdout_mode == 0) {
     if (pipe(stdout_pipe) < 0) {
       if (stdin_pipe[0] >= 0) { close(stdin_pipe[0]); close(stdin_pipe[1]); }
-      return res;
+      return -1;
     }
   }
   if (stderr_mode == 0) {
     if (pipe(stderr_pipe) < 0) {
       if (stdin_pipe[0] >= 0) { close(stdin_pipe[0]); close(stdin_pipe[1]); }
       if (stdout_pipe[0] >= 0) { close(stdout_pipe[0]); close(stdout_pipe[1]); }
-      return res;
+      return -1;
     }
   }
 
-  /* Build argv array from null-separated buffer */
   const char *argv_ptrs[256];
   int ai = 0;
   const char *p = argv_buf;
@@ -76,7 +74,6 @@ static _spawn_result_t _proc_spawn(
   }
   argv_ptrs[ai] = (const char *)0;
 
-  /* Build envp array from null-separated buffer */
   const char *envp_ptrs[256];
   int ei = 0;
   p = envp_buf;
@@ -88,66 +85,51 @@ static _spawn_result_t _proc_spawn(
 
   int pid = fork();
   if (pid < 0) {
-    /* Fork failed */
     if (stdin_pipe[0] >= 0) { close(stdin_pipe[0]); close(stdin_pipe[1]); }
     if (stdout_pipe[0] >= 0) { close(stdout_pipe[0]); close(stdout_pipe[1]); }
     if (stderr_pipe[0] >= 0) { close(stderr_pipe[0]); close(stderr_pipe[1]); }
-    return res;
+    return -1;
   }
 
   if (pid == 0) {
-    /* Child */
-
-    /* stdin */
     if (stdin_mode == 0) {
-      dup2(stdin_pipe[0], 0);
-      close(stdin_pipe[0]); close(stdin_pipe[1]);
+      dup2(stdin_pipe[0], 0); close(stdin_pipe[0]); close(stdin_pipe[1]);
     } else if (stdin_mode == 1) {
       if (stdin_fd != 0) { dup2(stdin_fd, 0); close(stdin_fd); }
     } else {
-      int devnull = open("/dev/null", O_RDONLY);
-      if (devnull >= 0) { dup2(devnull, 0); close(devnull); }
+      int dn = open("/dev/null", O_RDONLY); if (dn >= 0) { dup2(dn, 0); close(dn); }
     }
-
-    /* stdout */
     if (stdout_mode == 0) {
-      dup2(stdout_pipe[1], 1);
-      close(stdout_pipe[0]); close(stdout_pipe[1]);
+      dup2(stdout_pipe[1], 1); close(stdout_pipe[0]); close(stdout_pipe[1]);
     } else if (stdout_mode == 1) {
       if (stdout_fd != 1) { dup2(stdout_fd, 1); close(stdout_fd); }
     } else {
-      int devnull = open("/dev/null", O_WRONLY);
-      if (devnull >= 0) { dup2(devnull, 1); close(devnull); }
+      int dn = open("/dev/null", O_WRONLY); if (dn >= 0) { dup2(dn, 1); close(dn); }
     }
-
-    /* stderr */
     if (stderr_mode == 0) {
-      dup2(stderr_pipe[1], 2);
-      close(stderr_pipe[0]); close(stderr_pipe[1]);
+      dup2(stderr_pipe[1], 2); close(stderr_pipe[0]); close(stderr_pipe[1]);
     } else if (stderr_mode == 1) {
       if (stderr_fd != 2) { dup2(stderr_fd, 2); close(stderr_fd); }
     } else {
-      int devnull = open("/dev/null", O_WRONLY);
-      if (devnull >= 0) { dup2(devnull, 2); close(devnull); }
+      int dn = open("/dev/null", O_WRONLY); if (dn >= 0) { dup2(dn, 2); close(dn); }
     }
-
     execve(path, (char *const *)argv_ptrs, (char *const *)envp_ptrs);
-    _exit(127); /* execve failed */
+    _exit(127);
   }
 
-  /* Parent: close child ends of pipes, keep parent ends */
-  if (stdin_pipe[0] >= 0) { close(stdin_pipe[0]); res.stdin_parent_fd = stdin_pipe[1]; }
-  if (stdout_pipe[1] >= 0) { close(stdout_pipe[1]); res.stdout_parent_fd = stdout_pipe[0]; }
-  if (stderr_pipe[1] >= 0) { close(stderr_pipe[1]); res.stderr_parent_fd = stderr_pipe[0]; }
-
-  /* Close inherited fds in parent too (they were consumed) */
+  if (stdin_pipe[0] >= 0) { close(stdin_pipe[0]); _spawn_res.stdin_parent_fd = stdin_pipe[1]; }
+  if (stdout_pipe[1] >= 0) { close(stdout_pipe[1]); _spawn_res.stdout_parent_fd = stdout_pipe[0]; }
+  if (stderr_pipe[1] >= 0) { close(stderr_pipe[1]); _spawn_res.stderr_parent_fd = stderr_pipe[0]; }
   if (stdin_mode == 1) close(stdin_fd);
   if (stdout_mode == 1) close(stdout_fd);
   if (stderr_mode == 1) close(stderr_fd);
-
-  res.pid = pid;
-  return res;
+  _spawn_res.pid = pid;
+  return pid;
 }
+
+static int _spawn_get_stdin_fd(void) { return _spawn_res.stdin_parent_fd; }
+static int _spawn_get_stdout_fd(void) { return _spawn_res.stdout_parent_fd; }
+static int _spawn_get_stderr_fd(void) { return _spawn_res.stderr_parent_fd; }
 
 static int _proc_wait(int pid) {
   int status;
@@ -159,17 +141,11 @@ static int _proc_wait(int pid) {
 static int _proc_try_wait(int pid) {
   int status;
   int r = waitpid(pid, &status, WNOHANG);
-  if (r == 0) return -2; /* still running */
+  if (r == 0) return -2;
   if (r < 0) return -1;
   if (WIFEXITED(status)) return WEXITSTATUS(status);
   return -1;
 }
-
-/* Accessors for spawn result struct */
-static int _spawn_res_pid(void *p) { return ((_spawn_result_t *)p)->pid; }
-static int _spawn_res_stdin(void *p) { return ((_spawn_result_t *)p)->stdin_parent_fd; }
-static int _spawn_res_stdout(void *p) { return ((_spawn_result_t *)p)->stdout_parent_fd; }
-static int _spawn_res_stderr(void *p) { return ((_spawn_result_t *)p)->stderr_parent_fd; }
 %}
 end
 
@@ -177,68 +153,74 @@ end
    Types
    ============================================================ *)
 
-(* Linear child process handle — must wait exactly once *)
 #pub datavtype child =
   | child_mk of (int)
 
-(* Stream configuration for stdin/stdout/stderr *)
-#pub datavtype stream_config =
-  | pipe_new of ()
-  | inherit_fd of ($F.fd)
-  | dev_null of ()
+(* Type-level conditional: pipe_fd iff b=true *)
+#pub datavtype pipe_end(b:bool) =
+  | pipe_fd(true) of ($F.fd)
+  | pipe_none(false) of ()
 
-(* Spawn result: child + optional pipe fds *)
-#pub datavtype spawn_pipes =
-  | spawn_pipes_mk of (
+(* Stream config indexed by bool — pipe_new proves b=true *)
+#pub datavtype stream_config(b:bool) =
+  | pipe_new(true) of ()
+  | inherit_fd(false) of ($F.fd)
+  | dev_null(false) of ()
+
+(* Spawn result indexed by which streams are piped *)
+#pub datavtype spawn_pipes(sin:bool, sout:bool, serr:bool) =
+  | spawn_pipes_mk(sin, sout, serr) of (
       child,
-      $R.option($F.fd),   (* stdin pipe: parent writes to child *)
-      $R.option($F.fd),   (* stdout pipe: parent reads from child *)
-      $R.option($F.fd)    (* stderr pipe: parent reads from child *)
+      pipe_end(sin),
+      pipe_end(sout),
+      pipe_end(serr)
     )
 
 (* ============================================================
    Public API
    ============================================================ *)
 
-(* Spawn a child process.
-   path: null-terminated executable path
-   argv: null-separated argument strings
-   argv_count: number of arguments
-   envp: null-separated environment strings (KEY=VALUE)
-   envp_count: number of env entries
-   stdin/stdout/stderr_cfg: what to connect each stream to (consumed) *)
 #pub fn spawn
   {lp:agz}{np:pos | np < 1048576}
   {la:agz}{na:pos}
   {le:agz}{ne:pos}
+  {sin:bool}{sout:bool}{serr:bool}
   (path: !$A.borrow(byte, lp, np), path_len: int np,
    argv: !$A.borrow(byte, la, na), argv_count: int,
    envp: !$A.borrow(byte, le, ne), envp_count: int,
-   stdin_cfg: stream_config,
-   stdout_cfg: stream_config,
-   stderr_cfg: stream_config)
-  : $R.result(spawn_pipes)
+   stdin_cfg: stream_config(sin),
+   stdout_cfg: stream_config(sout),
+   stderr_cfg: stream_config(serr))
+  : $R.result(spawn_pipes(sin, sout, serr))
 
-(* Wait for child to exit. Consumes child. Returns exit code. *)
 #pub fn child_wait(c: child): $R.result(int)
 
-(* Non-blocking wait. Returns some(exit_code) if exited, none if still running. *)
 #pub fn child_try_wait(c: !child): $R.option(int)
 
-(* Get child pid *)
 #pub fn child_pid(c: !child): int
 
+#pub fn pipe_end_close {b:bool} (p: pipe_end(b)): void
+
 (* ============================================================
-   Implementations
+   Internal helpers
    ============================================================ *)
 
-fn _cfg_mode(cfg: !stream_config): int =
+(* Build pipe_end from config and raw fd.
+   The config pattern match IS the proof that b matches reality. *)
+fn _build_pipe_end {b:bool}
+  (cfg_mode: int, rawfd: int, cfg: !stream_config(b)): pipe_end(b) =
+  case+ cfg of
+  | pipe_new() => pipe_fd($F.fd_mk(rawfd))
+  | inherit_fd(_) => pipe_none()
+  | dev_null() => pipe_none()
+
+fn _cfg_mode {b:bool} (cfg: !stream_config(b)): int =
   case+ cfg of
   | pipe_new() => 0
   | inherit_fd(_) => 1
   | dev_null() => 2
 
-fn _cfg_fd(cfg: !stream_config): int =
+fn _cfg_fd {b:bool} (cfg: !stream_config(b)): int =
   case+ cfg of
   | pipe_new() => ~1
   | inherit_fd(f) => let
@@ -248,29 +230,17 @@ fn _cfg_fd(cfg: !stream_config): int =
     in r end
   | dev_null() => ~1
 
-(* Consume the configs — inherit_fd's fd is consumed by C side *)
-fn _consume_configs(
-  sin: stream_config, sout: stream_config, serr: stream_config
-): void = let
-  val () = case+ sin of
-    | ~pipe_new() => ()
-    | ~inherit_fd(f) => let val+ ~$F.fd_mk(_) = f in end
-    | ~dev_null() => ()
-  val () = case+ sout of
-    | ~pipe_new() => ()
-    | ~inherit_fd(f) => let val+ ~$F.fd_mk(_) = f in end
-    | ~dev_null() => ()
-  val () = case+ serr of
-    | ~pipe_new() => ()
-    | ~inherit_fd(f) => let val+ ~$F.fd_mk(_) = f in end
-    | ~dev_null() => ()
-in end
+fn _consume_cfg {b:bool} (cfg: stream_config(b)): void =
+  case+ cfg of
+  | ~pipe_new() => ()
+  | ~inherit_fd(f) => let val+ ~$F.fd_mk(_) = f in end
+  | ~dev_null() => ()
 
-fn _make_pipe_fd(rawfd: int): $R.option($F.fd) =
-  if rawfd >= 0 then $R.some($F.fd_mk(rawfd))
-  else $R.none()
+(* ============================================================
+   Implementations
+   ============================================================ *)
 
-implement spawn {lp}{np}{la}{na}{le}{ne}
+implement spawn {lp}{np}{la}{na}{le}{ne}{sin}{sout}{serr}
   (path, path_len, argv, argv_count, envp, envp_count,
    stdin_cfg, stdout_cfg, stderr_cfg) = let
   val sin_mode = _cfg_mode(stdin_cfg)
@@ -279,33 +249,36 @@ implement spawn {lp}{np}{la}{na}{le}{ne}
   val sout_fd = _cfg_fd(stdout_cfg)
   val serr_mode = _cfg_mode(stderr_cfg)
   val serr_fd = _cfg_fd(stderr_cfg)
-  (* Need null-terminated path *)
   val cpath = $A.alloc<byte>(path_len + 1)
   val () = $A.write_borrow(cpath, 0, path, path_len)
   val () = $A.write_byte(cpath, path_len, 0)
-  (* Call C spawn *)
-  val res_ptr = $extfcall(ptr, "_proc_spawn",
+  val pid = $extfcall(int, "_proc_spawn",
     $UNSAFE begin $UNSAFE.castvwtp1{ptr}(cpath) end,
     $UNSAFE begin $UNSAFE.castvwtp1{ptr}(argv) end, argv_count,
     $UNSAFE begin $UNSAFE.castvwtp1{ptr}(envp) end, envp_count,
-    sin_mode, sin_fd,
-    sout_mode, sout_fd,
-    serr_mode, serr_fd)
+    sin_mode, sin_fd, sout_mode, sout_fd, serr_mode, serr_fd)
   val () = $A.free<byte>(cpath)
-  val pid = $extfcall(int, "_spawn_res_pid", res_ptr)
-  val stdin_pfd = $extfcall(int, "_spawn_res_stdin", res_ptr)
-  val stdout_pfd = $extfcall(int, "_spawn_res_stdout", res_ptr)
-  val stderr_pfd = $extfcall(int, "_spawn_res_stderr", res_ptr)
-  (* Consume configs — C already handled the fds *)
-  val () = _consume_configs(stdin_cfg, stdout_cfg, stderr_cfg)
 in
-  if pid >= 0 then
-    $R.ok(spawn_pipes_mk(
-      child_mk(pid),
-      _make_pipe_fd(stdin_pfd),
-      _make_pipe_fd(stdout_pfd),
-      _make_pipe_fd(stderr_pfd)))
-  else $R.err(~1)
+  if pid >= 0 then let
+    val stdin_pfd = $extfcall(int, "_spawn_get_stdin_fd")
+    val stdout_pfd = $extfcall(int, "_spawn_get_stdout_fd")
+    val stderr_pfd = $extfcall(int, "_spawn_get_stderr_fd")
+    (* Pattern match on configs to build correctly-typed pipe_ends *)
+    val sin_end = _build_pipe_end(sin_mode, stdin_pfd, stdin_cfg)
+    val sout_end = _build_pipe_end(sout_mode, stdout_pfd, stdout_cfg)
+    val serr_end = _build_pipe_end(serr_mode, stderr_pfd, stderr_cfg)
+    (* Consume the configs — C already handled the fds *)
+    val () = _consume_cfg(stdin_cfg)
+    val () = _consume_cfg(stdout_cfg)
+    val () = _consume_cfg(stderr_cfg)
+  in
+    $R.ok(spawn_pipes_mk(child_mk(pid), sin_end, sout_end, serr_end))
+  end
+  else let
+    val () = _consume_cfg(stdin_cfg)
+    val () = _consume_cfg(stdout_cfg)
+    val () = _consume_cfg(stderr_cfg)
+  in $R.err(~1) end
 end
 
 implement child_wait(c) = let
@@ -322,8 +295,7 @@ implement child_try_wait(c) = let
   prval () = fold@(c)
 in
   if status >= 0 then $R.some(status)
-  else if $AR.eq_int_int(status, ~2) then $R.none() (* still running *)
-  else $R.none() (* error — treat as still running *)
+  else $R.none()
 end
 
 implement child_pid(c) = let
@@ -331,3 +303,8 @@ implement child_pid(c) = let
   val p = pid
   prval () = fold@(c)
 in p end
+
+implement pipe_end_close {b} (p) =
+  case+ p of
+  | ~pipe_fd(f) => $R.discard<int>($F.file_close(f))
+  | ~pipe_none() => ()
