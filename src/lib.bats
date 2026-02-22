@@ -191,9 +191,9 @@ end
    stdin_cfg: stream_config(sin),
    stdout_cfg: stream_config(sout),
    stderr_cfg: stream_config(serr))
-  : $R.result(spawn_pipes(sin, sout, serr))
+  : $R.result(spawn_pipes(sin, sout, serr), int)
 
-#pub fn child_wait(c: child): $R.result(int)
+#pub fn child_wait(c: child): $R.result(int, int)
 
 #pub fn child_try_wait(c: !child): $R.option(int)
 
@@ -306,5 +306,5 @@ in p end
 
 implement pipe_end_close {b} (p) =
   case+ p of
-  | ~pipe_fd(f) => $R.discard<int>($F.file_close(f))
+  | ~pipe_fd(f) => $R.discard<int><int>($F.file_close(f))
   | ~pipe_none() => ()
