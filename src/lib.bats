@@ -15,6 +15,8 @@
 
 $UNSAFE begin
 %{#
+#ifndef _PROCESS_RUNTIME_DEFINED
+#define _PROCESS_RUNTIME_DEFINED
 #include <unistd.h>
 #include <sys/wait.h>
 #include <fcntl.h>
@@ -146,6 +148,7 @@ static int _proc_try_wait(int pid) {
   if (WIFEXITED(status)) return WEXITSTATUS(status);
   return -1;
 }
+#endif
 %}
 end
 
