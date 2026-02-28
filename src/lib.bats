@@ -150,6 +150,7 @@ static int _proc_try_wait(int pid) {
 }
 #endif
 %}
+end
 
 (* ============================================================
    Types
@@ -310,5 +311,3 @@ implement pipe_end_close {b} (p) =
   case+ p of
   | ~pipe_fd(f) => $R.discard<int><int>($F.file_close(f))
   | ~pipe_none() => ()
-
-end (* $UNSAFE *)
