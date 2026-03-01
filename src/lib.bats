@@ -150,7 +150,6 @@ static int _proc_try_wait(int pid) {
 }
 #endif
 %}
-end
 
 (* ============================================================
    Types
@@ -256,9 +255,9 @@ implement spawn {lp}{np}{la}{na}{le}{ne}{sin}{sout}{serr}
   val () = $A.write_borrow(cpath, 0, path, path_len)
   val () = $A.write_byte(cpath, path_len, 0)
   val pid = $extfcall(int, "_proc_spawn",
-    $UNSAFE begin $UNSAFE.castvwtp1{ptr}(cpath) end,
-    $UNSAFE begin $UNSAFE.castvwtp1{ptr}(argv) end, argv_count,
-    $UNSAFE begin $UNSAFE.castvwtp1{ptr}(envp) end, envp_count,
+    $UNSAFE.castvwtp1{ptr}(cpath),
+    $UNSAFE.castvwtp1{ptr}(argv), argv_count,
+    $UNSAFE.castvwtp1{ptr}(envp), envp_count,
     sin_mode, sin_fd, sout_mode, sout_fd, serr_mode, serr_fd)
   val () = $A.free<byte>(cpath)
 in
@@ -311,3 +310,5 @@ implement pipe_end_close {b} (p) =
   case+ p of
   | ~pipe_fd(f) => $R.discard<int><int>($F.file_close(f))
   | ~pipe_none() => ()
+
+end (* $UNSAFE *)
