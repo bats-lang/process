@@ -2,3 +2,9 @@
 name = "process"
 kind = "lib"
 unsafe = true
+
+[dependencies]
+"arith" = ""
+"array" = ""
+"file" = ""
+"result" = ""
