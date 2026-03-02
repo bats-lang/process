@@ -150,6 +150,7 @@ static int _proc_try_wait(int pid) {
 }
 #endif
 %}
+end
 
 (* ============================================================
    Types
@@ -254,17 +255,17 @@ implement spawn {lp}{np}{la}{na}{le}{ne}{sin}{sout}{serr}
   val cpath = $A.alloc<byte>(path_len + 1)
   val () = $A.write_borrow(cpath, 0, path, path_len)
   val () = $A.write_byte(cpath, path_len, 0)
-  val pid = $extfcall(int, "_proc_spawn",
+  val pid = $UNSAFE begin $extfcall(int, "_proc_spawn",
     $UNSAFE.castvwtp1{ptr}(cpath),
     $UNSAFE.castvwtp1{ptr}(argv), argv_count,
     $UNSAFE.castvwtp1{ptr}(envp), envp_count,
-    sin_mode, sin_fd, sout_mode, sout_fd, serr_mode, serr_fd)
+    sin_mode, sin_fd, sout_mode, sout_fd, serr_mode, serr_fd) end
   val () = $A.free<byte>(cpath)
 in
   if pid >= 0 then let
-    val stdin_pfd = $extfcall(int, "_spawn_get_stdin_fd")
-    val stdout_pfd = $extfcall(int, "_spawn_get_stdout_fd")
-    val stderr_pfd = $extfcall(int, "_spawn_get_stderr_fd")
+    val stdin_pfd = $UNSAFE begin $extfcall(int, "_spawn_get_stdin_fd") end
+    val stdout_pfd = $UNSAFE begin $extfcall(int, "_spawn_get_stdout_fd") end
+    val stderr_pfd = $UNSAFE begin $extfcall(int, "_spawn_get_stderr_fd") end
     (* Pattern match on configs to build correctly-typed pipe_ends *)
     val sin_end = _build_pipe_end(sin_mode, stdin_pfd, stdin_cfg)
     val sout_end = _build_pipe_end(sout_mode, stdout_pfd, stdout_cfg)
@@ -285,7 +286,7 @@ end
 
 implement child_wait(c) = let
   val+ ~child_mk(pid) = c
-  val status = $extfcall(int, "_proc_wait", pid)
+  val status = $UNSAFE begin $extfcall(int, "_proc_wait", pid) end
 in
   if status >= 0 then $R.ok(status)
   else $R.err(status)
@@ -293,7 +294,7 @@ end
 
 implement child_try_wait(c) = let
   val+ @child_mk(pid) = c
-  val status = $extfcall(int, "_proc_try_wait", pid)
+  val status = $UNSAFE begin $extfcall(int, "_proc_try_wait", pid) end
   prval () = fold@(c)
 in
   if status >= 0 then $R.some(status)
@@ -310,5 +311,3 @@ implement pipe_end_close {b} (p) =
   case+ p of
   | ~pipe_fd(f) => $R.discard<int><int>($F.file_close(f))
   | ~pipe_none() => ()
-
-end (* $UNSAFE *)
