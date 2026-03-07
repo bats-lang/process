@@ -6,7 +6,10 @@
 
 #use array as A
 #use arith as AR
+#use builder as B
+#use list as L
 #use result as R
+#use str as S
 #use file as F
 
 (* ============================================================
@@ -311,3 +314,88 @@ implement pipe_end_close {b} (p) =
   case+ p of
   | ~pipe_fd(f) => $R.discard<int><int>($F.file_close(f))
   | ~pipe_none() => ()
+
+(* ============================================================
+   List-based spawn API
+   ============================================================ *)
+
+fn _bput_v(b: !$B.builder_v >> $B.builder_v, c: int): void = let
+  val n = $B.length(b)
+in
+  if n < 524288 - 1 then $B.put_char(b, c)
+  else ()
+end
+
+fn _bput_str_v(b: !$B.builder_v >> $B.builder_v, s0: string): void = let
+  val s = g1ofg0_string(s0)
+  val slen = g1u2i(string1_length(s))
+  fun loop {sn:nat}{i:nat | i <= sn}{fuel:nat} .<fuel>.
+    (b: !$B.builder_v >> $B.builder_v,
+     s: string sn, slen: int sn, i: int i, fuel: int fuel): void =
+    if fuel <= 0 then ()
+    else if i >= slen then ()
+    else let
+      val c = char2int0(string_get_at(s, i))
+      val () = _bput_v(b, c)
+    in loop(b, s, slen, i + 1, fuel - 1) end
+in loop(b, s, slen, 0, slen) end
+
+fn _build_argv(args: $L.list(string)): @($B.builder_v, int) = let
+  fun loop {n:nat} .<n>.
+    (xs: $L.list_t(string, n), b: !$B.builder_v >> $B.builder_v,
+     count: int): int =
+    case+ xs of
+    | $L.list_nil() => count
+    | $L.list_cons(s, tl) => let
+        val () = _bput_str_v(b, s)
+        val () = _bput_v(b, 0)
+      in loop(tl, b, count + 1) end
+  var b = $B.create()
+  val argc = loop(args, b, 0)
+in @(b, argc) end
+
+fn _build_envp(): @($B.builder_v, int) = let
+  var b = $B.create()
+  val () = $B.bput(b, "PATH=/usr/bin:/usr/local/bin:/bin")
+  val () = $B.put_char(b, 0)
+in @(b, 1) end
+
+#pub fn spawn_args
+  {sin:bool}{sout:bool}{serr:bool}
+  (path: string,
+   args: $L.list(string),
+   stdin_cfg: stream_config(sin),
+   stdout_cfg: stream_config(sout),
+   stderr_cfg: stream_config(serr))
+  : $R.result(spawn_pipes(sin, sout, serr), int)
+
+implement spawn_args {sin}{sout}{serr}
+  (path, args, stdin_cfg, stdout_cfg, stderr_cfg) = let
+  val path1 = g1ofg0_string(path)
+  val path_len = g1u2i(string1_length(path1))
+in
+  if path_len >= 524287 then let
+    val () = _consume_cfg(stdin_cfg)
+    val () = _consume_cfg(stdout_cfg)
+    val () = _consume_cfg(stderr_cfg)
+  in $R.err(~1) end
+  else let
+  val path_arr = $A.alloc<byte>(524288)
+  val () = $S.fill_exact(path_arr, path1, 524288, path_len, 0, path_len)
+  val () = $A.set<byte>(path_arr, path_len, int2byte0(0))
+  val @(fz_p, bv_p) = $A.freeze<byte>(path_arr)
+  val @(argv_b, argc) = _build_argv(args)
+  val @(argv_arr, _) = $B.to_arr(argv_b)
+  val @(fz_a, bv_a) = $A.freeze<byte>(argv_arr)
+  val @(envp_b, envp_c) = _build_envp()
+  val @(envp_arr, _) = $B.to_arr(envp_b)
+  val @(fz_e, bv_e) = $A.freeze<byte>(envp_arr)
+  val r = spawn(bv_p, 524288, bv_a, argc, bv_e, envp_c,
+    stdin_cfg, stdout_cfg, stderr_cfg)
+  val () = $A.drop<byte>(fz_a, bv_a)
+  val () = $A.free<byte>($A.thaw<byte>(fz_a))
+  val () = $A.drop<byte>(fz_e, bv_e)
+  val () = $A.free<byte>($A.thaw<byte>(fz_e))
+  val () = $A.drop<byte>(fz_p, bv_p)
+  val () = $A.free<byte>($A.thaw<byte>(fz_p))
+in r end end
