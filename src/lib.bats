@@ -186,18 +186,6 @@ end
    Public API
    ============================================================ *)
 
-#pub fn spawn
-  {lp:agz}{np:pos | np < 1048576}
-  {la:agz}{na:pos}
-  {le:agz}{ne:pos}
-  {sin:bool}{sout:bool}{serr:bool}
-  (path: !$A.borrow(byte, lp, np), path_len: int np,
-   argv: !$A.borrow(byte, la, na), argv_count: int,
-   envp: !$A.borrow(byte, le, ne), envp_count: int,
-   stdin_cfg: stream_config(sin),
-   stdout_cfg: stream_config(sout),
-   stderr_cfg: stream_config(serr))
-  : $R.result(spawn_pipes(sin, sout, serr), int)
 
 #pub fn child_wait(c: child): $R.result(int, int)
 
@@ -246,9 +234,18 @@ fn _consume_cfg {b:bool} (cfg: stream_config(b)): void =
    Implementations
    ============================================================ *)
 
-implement spawn {lp}{np}{la}{na}{le}{ne}{sin}{sout}{serr}
-  (path, path_len, argv, argv_count, envp, envp_count,
-   stdin_cfg, stdout_cfg, stderr_cfg) = let
+fn spawn
+  {lp:agz}{np:pos | np < 1048576}
+  {la:agz}{na:pos}
+  {le:agz}{ne:pos}
+  {sin:bool}{sout:bool}{serr:bool}
+  (path: !$A.borrow(byte, lp, np), path_len: int np,
+   argv: !$A.borrow(byte, la, na), argv_count: int,
+   envp: !$A.borrow(byte, le, ne), envp_count: int,
+   stdin_cfg: stream_config(sin),
+   stdout_cfg: stream_config(sout),
+   stderr_cfg: stream_config(serr))
+  : $R.result(spawn_pipes(sin, sout, serr), int) = let
   val sin_mode = _cfg_mode(stdin_cfg)
   val sin_fd = _cfg_fd(stdin_cfg)
   val sout_mode = _cfg_mode(stdout_cfg)
