@@ -313,83 +313,64 @@ implement pipe_end_close {b} (p) =
   | ~pipe_none() => ()
 
 (* ============================================================
-   List-based spawn API
+   List-based public spawn API
    ============================================================ *)
 
-fn _bput_v(b: !$B.builder_v >> $B.builder_v, c: int): void = let
-  val n = $B.length(b)
-in
-  if n < 524288 - 1 then $B.put_char(b, c)
-  else ()
-end
+(* An argv/envp entry: array + content length. Consumed by spawn. *)
+#pub vtypedef arg_entry = [l:agz] @($A.arr(byte, l, 524288), int)
 
-fn _bput_str_v(b: !$B.builder_v >> $B.builder_v, s0: string): void = let
-  val s = g1ofg0_string(s0)
-  val slen = g1u2i(string1_length(s))
-  fun loop {sn:nat}{i:nat | i <= sn}{fuel:nat} .<fuel>.
-    (b: !$B.builder_v >> $B.builder_v,
-     s: string sn, slen: int sn, i: int i, fuel: int fuel): void =
-    if fuel <= 0 then ()
-    else if i >= slen then ()
-    else let
-      val c = char2int0(string_get_at(s, i))
-      val () = _bput_v(b, c)
-    in loop(b, s, slen, i + 1, fuel - 1) end
-in loop(b, s, slen, 0, slen) end
-
-fn _build_argv(args: $L.list(string)): @($B.builder_v, int) = let
+fn _build_from_list(xs: $L.listv(arg_entry)): @($B.builder_v, int) = let
   fun loop {n:nat} .<n>.
-    (xs: $L.list_t(string, n), b: !$B.builder_v >> $B.builder_v,
-     count: int): int =
+    (xs: $L.list_vt(arg_entry, n),
+     b: !$B.builder_v >> $B.builder_v, count: int): int =
     case+ xs of
-    | $L.list_nil() => count
-    | $L.list_cons(s, tl) => let
-        val () = _bput_str_v(b, s)
-        val () = _bput_v(b, 0)
+    | ~$L.list_vt_nil() => count
+    | ~$L.list_vt_cons(@(arr, len), tl) => let
+        val @(fz, bv) = $A.freeze<byte>(arr)
+        fun copy {lb:agz}{fuel:nat} .<fuel>.
+          (bv: !$A.borrow(byte, lb, 524288),
+           b: !$B.builder_v >> $B.builder_v,
+           i: int, len: int, fuel: int fuel): void =
+          if fuel <= 0 then ()
+          else if i >= len then ()
+          else let
+            val c = $S.borrow_byte(bv, i, 524288)
+            val n = $B.length(b)
+            val () = (if n < 524288 - 1 then $B.put_char(b, c) else ())
+          in copy(bv, b, i + 1, len, fuel - 1) end
+        val () = copy(bv, b, 0, len, 524288)
+        val n2 = $B.length(b)
+        val () = (if n2 < 524288 - 1 then $B.put_char(b, 0) else ())
+        val () = $A.drop<byte>(fz, bv)
+        val () = $A.free<byte>($A.thaw<byte>(fz))
       in loop(tl, b, count + 1) end
   var b = $B.create()
-  val argc = loop(args, b, 0)
-in @(b, argc) end
+  val count = loop(xs, b, 0)
+in @(b, count) end
 
-
-#pub fn spawn_args
+#pub fn spawn_bv
   {sin:bool}{sout:bool}{serr:bool}
-  (path: string,
-   args: $L.list(string),
-   envp: $L.list(string),
+  {lp:agz}
+  (path: !$A.borrow(byte, lp, 524288),
+   argv: $L.listv(arg_entry),
+   envp: $L.listv(arg_entry),
    stdin_cfg: stream_config(sin),
    stdout_cfg: stream_config(sout),
    stderr_cfg: stream_config(serr))
   : $R.result(spawn_pipes(sin, sout, serr), int)
 
-implement spawn_args {sin}{sout}{serr}
-  (path, args, envp, stdin_cfg, stdout_cfg, stderr_cfg) = let
-  val path1 = g1ofg0_string(path)
-  val path_len = g1u2i(string1_length(path1))
-in
-  if path_len >= 524287 then let
-    val () = _consume_cfg(stdin_cfg)
-    val () = _consume_cfg(stdout_cfg)
-    val () = _consume_cfg(stderr_cfg)
-  in $R.err(~1) end
-  else let
-  val path_arr = $A.alloc<byte>(524288)
-  val () = $S.fill_exact(path_arr, path1, 524288, path_len, 0, path_len)
-  val () = $A.set<byte>(path_arr, path_len, int2byte0(0))
-  val @(fz_p, bv_p) = $A.freeze<byte>(path_arr)
-  val @(argv_b, argc) = _build_argv(args)
+implement spawn_bv {sin}{sout}{serr}{lp}
+  (path, argv, envp, stdin_cfg, stdout_cfg, stderr_cfg) = let
+  val @(argv_b, argc) = _build_from_list(argv)
   val @(argv_arr, _) = $B.to_arr(argv_b)
   val @(fz_a, bv_a) = $A.freeze<byte>(argv_arr)
-  val @(envp_b, envp_c) = _build_argv(envp)
+  val @(envp_b, envp_c) = _build_from_list(envp)
   val @(envp_arr, _) = $B.to_arr(envp_b)
   val @(fz_e, bv_e) = $A.freeze<byte>(envp_arr)
-  val r = spawn(bv_p, 524288, bv_a, argc, bv_e, envp_c,
+  val r = spawn(path, 524288, bv_a, argc, bv_e, envp_c,
     stdin_cfg, stdout_cfg, stderr_cfg)
   val () = $A.drop<byte>(fz_a, bv_a)
   val () = $A.free<byte>($A.thaw<byte>(fz_a))
   val () = $A.drop<byte>(fz_e, bv_e)
   val () = $A.free<byte>($A.thaw<byte>(fz_e))
-  val () = $A.drop<byte>(fz_p, bv_p)
-  val () = $A.free<byte>($A.thaw<byte>(fz_p))
-in r end end
-
+in r end
