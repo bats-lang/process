@@ -351,23 +351,19 @@ fn _build_argv(args: $L.list(string)): @($B.builder_v, int) = let
   val argc = loop(args, b, 0)
 in @(b, argc) end
 
-fn _build_envp(): @($B.builder_v, int) = let
-  var b = $B.create()
-  val () = $B.bput(b, "PATH=/usr/bin:/usr/local/bin:/bin")
-  val () = $B.put_char(b, 0)
-in @(b, 1) end
 
 #pub fn spawn_args
   {sin:bool}{sout:bool}{serr:bool}
   (path: string,
    args: $L.list(string),
+   envp: $L.list(string),
    stdin_cfg: stream_config(sin),
    stdout_cfg: stream_config(sout),
    stderr_cfg: stream_config(serr))
   : $R.result(spawn_pipes(sin, sout, serr), int)
 
 implement spawn_args {sin}{sout}{serr}
-  (path, args, stdin_cfg, stdout_cfg, stderr_cfg) = let
+  (path, args, envp, stdin_cfg, stdout_cfg, stderr_cfg) = let
   val path1 = g1ofg0_string(path)
   val path_len = g1u2i(string1_length(path1))
 in
@@ -384,7 +380,7 @@ in
   val @(argv_b, argc) = _build_argv(args)
   val @(argv_arr, _) = $B.to_arr(argv_b)
   val @(fz_a, bv_a) = $A.freeze<byte>(argv_arr)
-  val @(envp_b, envp_c) = _build_envp()
+  val @(envp_b, envp_c) = _build_argv(envp)
   val @(envp_arr, _) = $B.to_arr(envp_b)
   val @(fz_e, bv_e) = $A.freeze<byte>(envp_arr)
   val r = spawn(bv_p, 524288, bv_a, argc, bv_e, envp_c,
@@ -397,53 +393,3 @@ in
   val () = $A.free<byte>($A.thaw<byte>(fz_p))
 in r end end
 
-(* ============================================================
-   Builder-based spawn API
-   ============================================================ *)
-
-(* Count null bytes in an arr — each null terminates one entry *)
-fn _count_nulls {l:agz}{n:pos}
-  (buf: !$A.arr(byte, l, n), len: int, cap: int n): int = let
-  fun loop {l2:agz}{n2:pos}{fuel:nat} .<fuel>.
-    (buf: !$A.arr(byte, l2, n2), cap: int n2,
-     pos: int, len: int, count: int, fuel: int fuel): int =
-    if fuel <= 0 then count
-    else if pos >= len then count
-    else let
-      val b = byte2int0($A.get<byte>(buf, $AR.checked_idx(pos, cap)))
-    in
-      if b = 0 then loop(buf, cap, pos + 1, len, count + 1, fuel - 1)
-      else loop(buf, cap, pos + 1, len, count, fuel - 1)
-    end
-  val len1 = g1ofg0(len)
-in if len1 <= 0 then 0 else loop(buf, cap, 0, len1, 0, len1) end
-
-#pub fn spawn_buf
-  {sin:bool}{sout:bool}{serr:bool}
-  (path_b: $B.builder_v,
-   argv_b: $B.builder_v,
-   envp_b: $B.builder_v,
-   stdin_cfg: stream_config(sin),
-   stdout_cfg: stream_config(sout),
-   stderr_cfg: stream_config(serr))
-  : $R.result(spawn_pipes(sin, sout, serr), int)
-
-implement spawn_buf {sin}{sout}{serr}
-  (path_b, argv_b, envp_b, stdin_cfg, stdout_cfg, stderr_cfg) = let
-  val @(path_arr, path_len) = $B.to_arr(path_b)
-  val @(fz_p, bv_p) = $A.freeze<byte>(path_arr)
-  val @(argv_arr, argv_len) = $B.to_arr(argv_b)
-  val argc = _count_nulls(argv_arr, argv_len, 524288)
-  val @(fz_a, bv_a) = $A.freeze<byte>(argv_arr)
-  val @(envp_arr, envp_len) = $B.to_arr(envp_b)
-  val envp_c = _count_nulls(envp_arr, envp_len, 524288)
-  val @(fz_e, bv_e) = $A.freeze<byte>(envp_arr)
-  val r = spawn(bv_p, 524288, bv_a, argc, bv_e, envp_c,
-    stdin_cfg, stdout_cfg, stderr_cfg)
-  val () = $A.drop<byte>(fz_a, bv_a)
-  val () = $A.free<byte>($A.thaw<byte>(fz_a))
-  val () = $A.drop<byte>(fz_e, bv_e)
-  val () = $A.free<byte>($A.thaw<byte>(fz_e))
-  val () = $A.drop<byte>(fz_p, bv_p)
-  val () = $A.free<byte>($A.thaw<byte>(fz_p))
-in r end
