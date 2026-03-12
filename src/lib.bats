@@ -1,6 +1,13 @@
 (* process -- safe process spawning with linear child handles *)
 (* Linear child must be waited on. Pipes are linear fds from file package. *)
 (* Type-indexed: pipe_new in config guarantees fd in result. *)
+(*
+   IMPORTANT: The ONLY public spawn function is `spawn`.
+   It takes byte-array borrows via listv(arg_entry).
+   Do NOT add string-based wrappers, builder-based wrappers,
+   or any other spawn variants. Callers build arg_entry lists
+   themselves. No exceptions.
+*)
 
 #include "share/atspre_staload.hats"
 
@@ -182,10 +189,12 @@ end
       pipe_end(serr)
     )
 
+(* An argv/envp entry: owned array + content length. Consumed by spawn. *)
+#pub vtypedef arg_entry = [l:agz] @($A.arr(byte, l, 524288), int)
+
 (* ============================================================
    Public API
    ============================================================ *)
-
 
 #pub fn child_wait(c: child): $R.result(int, int)
 
@@ -194,6 +203,17 @@ end
 #pub fn child_pid(c: !child): int
 
 #pub fn pipe_end_close {b:bool} (p: pipe_end(b)): void
+
+#pub fn spawn
+  {sin:bool}{sout:bool}{serr:bool}
+  {lp:agz}
+  (path: !$A.borrow(byte, lp, 524288),
+   argv: $L.listv(arg_entry),
+   envp: $L.listv(arg_entry),
+   stdin_cfg: stream_config(sin),
+   stdout_cfg: stream_config(sout),
+   stderr_cfg: stream_config(serr))
+  : $R.result(spawn_pipes(sin, sout, serr), int)
 
 (* ============================================================
    Internal helpers
@@ -230,16 +250,45 @@ fn _consume_cfg {b:bool} (cfg: stream_config(b)): void =
   | ~inherit_fd(f) => let val+ ~$F.fd_mk(_) = f in end
   | ~dev_null() => ()
 
+fn _build_from_list(xs: $L.listv(arg_entry)): @($B.builder_v, int) = let
+  fun loop {n:nat} .<n>.
+    (xs: $L.list_vt(arg_entry, n),
+     b: !$B.builder_v >> $B.builder_v, count: int): int =
+    case+ xs of
+    | ~$L.list_vt_nil() => count
+    | ~$L.list_vt_cons(@(arr, len), tl) => let
+        val @(fz, bv) = $A.freeze<byte>(arr)
+        fun copy {lb:agz}{fuel:nat} .<fuel>.
+          (bv: !$A.borrow(byte, lb, 524288),
+           b: !$B.builder_v >> $B.builder_v,
+           i: int, len: int, fuel: int fuel): void =
+          if fuel <= 0 then ()
+          else if i >= len then ()
+          else let
+            val c = $S.borrow_byte(bv, i, 524288)
+            val n = $B.length(b)
+            val () = (if n < 524288 - 1 then $B.put_char(b, c) else ())
+          in copy(bv, b, i + 1, len, fuel - 1) end
+        val () = copy(bv, b, 0, len, 524288)
+        val n2 = $B.length(b)
+        val () = (if n2 < 524288 - 1 then $B.put_char(b, 0) else ())
+        val () = $A.drop<byte>(fz, bv)
+        val () = $A.free<byte>($A.thaw<byte>(fz))
+      in loop(tl, b, count + 1) end
+  var b = $B.create()
+  val count = loop(xs, b, 0)
+in @(b, count) end
+
 (* ============================================================
    Implementations
    ============================================================ *)
 
-fn spawn
-  {lp:agz}{np:pos | np < 1048576}
+fn _spawn_raw
+  {lp:agz}
   {la:agz}{na:pos}
   {le:agz}{ne:pos}
   {sin:bool}{sout:bool}{serr:bool}
-  (path: !$A.borrow(byte, lp, np), path_len: int np,
+  (path: !$A.borrow(byte, lp, 524288),
    argv: !$A.borrow(byte, la, na), argv_count: int,
    envp: !$A.borrow(byte, le, ne), envp_count: int,
    stdin_cfg: stream_config(sin),
@@ -252,25 +301,19 @@ fn spawn
   val sout_fd = _cfg_fd(stdout_cfg)
   val serr_mode = _cfg_mode(stderr_cfg)
   val serr_fd = _cfg_fd(stderr_cfg)
-  val cpath = $A.alloc<byte>(path_len + 1)
-  val () = $A.write_borrow(cpath, 0, path, path_len)
-  val () = $A.write_byte(cpath, path_len, 0)
   val pid = $UNSAFE begin $extfcall(int, "_proc_spawn",
-    $UNSAFE.castvwtp1{ptr}(cpath),
+    $UNSAFE.castvwtp1{ptr}(path),
     $UNSAFE.castvwtp1{ptr}(argv), argv_count,
     $UNSAFE.castvwtp1{ptr}(envp), envp_count,
     sin_mode, sin_fd, sout_mode, sout_fd, serr_mode, serr_fd) end
-  val () = $A.free<byte>(cpath)
 in
   if pid >= 0 then let
     val stdin_pfd = $UNSAFE begin $extfcall(int, "_spawn_get_stdin_fd") end
     val stdout_pfd = $UNSAFE begin $extfcall(int, "_spawn_get_stdout_fd") end
     val stderr_pfd = $UNSAFE begin $extfcall(int, "_spawn_get_stderr_fd") end
-    (* Pattern match on configs to build correctly-typed pipe_ends *)
     val sin_end = _build_pipe_end(sin_mode, stdin_pfd, stdin_cfg)
     val sout_end = _build_pipe_end(sout_mode, stdout_pfd, stdout_cfg)
     val serr_end = _build_pipe_end(serr_mode, stderr_pfd, stderr_cfg)
-    (* Consume the configs — C already handled the fds *)
     val () = _consume_cfg(stdin_cfg)
     val () = _consume_cfg(stdout_cfg)
     val () = _consume_cfg(stderr_cfg)
@@ -312,54 +355,7 @@ implement pipe_end_close {b} (p) =
   | ~pipe_fd(f) => $R.discard<int><int>($F.file_close(f))
   | ~pipe_none() => ()
 
-(* ============================================================
-   List-based public spawn API
-   ============================================================ *)
-
-(* An argv/envp entry: array + content length. Consumed by spawn. *)
-#pub vtypedef arg_entry = [l:agz] @($A.arr(byte, l, 524288), int)
-
-fn _build_from_list(xs: $L.listv(arg_entry)): @($B.builder_v, int) = let
-  fun loop {n:nat} .<n>.
-    (xs: $L.list_vt(arg_entry, n),
-     b: !$B.builder_v >> $B.builder_v, count: int): int =
-    case+ xs of
-    | ~$L.list_vt_nil() => count
-    | ~$L.list_vt_cons(@(arr, len), tl) => let
-        val @(fz, bv) = $A.freeze<byte>(arr)
-        fun copy {lb:agz}{fuel:nat} .<fuel>.
-          (bv: !$A.borrow(byte, lb, 524288),
-           b: !$B.builder_v >> $B.builder_v,
-           i: int, len: int, fuel: int fuel): void =
-          if fuel <= 0 then ()
-          else if i >= len then ()
-          else let
-            val c = $S.borrow_byte(bv, i, 524288)
-            val n = $B.length(b)
-            val () = (if n < 524288 - 1 then $B.put_char(b, c) else ())
-          in copy(bv, b, i + 1, len, fuel - 1) end
-        val () = copy(bv, b, 0, len, 524288)
-        val n2 = $B.length(b)
-        val () = (if n2 < 524288 - 1 then $B.put_char(b, 0) else ())
-        val () = $A.drop<byte>(fz, bv)
-        val () = $A.free<byte>($A.thaw<byte>(fz))
-      in loop(tl, b, count + 1) end
-  var b = $B.create()
-  val count = loop(xs, b, 0)
-in @(b, count) end
-
-#pub fn spawn_bv
-  {sin:bool}{sout:bool}{serr:bool}
-  {lp:agz}
-  (path: !$A.borrow(byte, lp, 524288),
-   argv: $L.listv(arg_entry),
-   envp: $L.listv(arg_entry),
-   stdin_cfg: stream_config(sin),
-   stdout_cfg: stream_config(sout),
-   stderr_cfg: stream_config(serr))
-  : $R.result(spawn_pipes(sin, sout, serr), int)
-
-implement spawn_bv {sin}{sout}{serr}{lp}
+implement spawn {sin}{sout}{serr}{lp}
   (path, argv, envp, stdin_cfg, stdout_cfg, stderr_cfg) = let
   val @(argv_b, argc) = _build_from_list(argv)
   val @(argv_arr, _) = $B.to_arr(argv_b)
@@ -367,7 +363,7 @@ implement spawn_bv {sin}{sout}{serr}{lp}
   val @(envp_b, envp_c) = _build_from_list(envp)
   val @(envp_arr, _) = $B.to_arr(envp_b)
   val @(fz_e, bv_e) = $A.freeze<byte>(envp_arr)
-  val r = spawn(path, 524288, bv_a, argc, bv_e, envp_c,
+  val r = _spawn_raw(path, bv_a, argc, bv_e, envp_c,
     stdin_cfg, stdout_cfg, stderr_cfg)
   val () = $A.drop<byte>(fz_a, bv_a)
   val () = $A.free<byte>($A.thaw<byte>(fz_a))
