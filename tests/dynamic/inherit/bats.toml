@@ -1,0 +1,10 @@
+[package]
+name = "inherit"
+kind = "bin"
+
+[dependencies]
+"array" = ""
+"builder" = ""
+"list" = ""
+"process" = ""
+"result" = ""
