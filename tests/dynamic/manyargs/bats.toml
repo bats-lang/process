@@ -1,0 +1,10 @@
+[package]
+name = "manyargs"
+kind = "bin"
+
+[dependencies]
+"array" = ""
+"builder" = ""
+"list" = ""
+"process" = ""
+"result" = ""
