@@ -1,0 +1,10 @@
+[package]
+name = "search"
+kind = "bin"
+
+[dependencies]
+"array" = ""
+"builder" = ""
+"list" = ""
+"process" = ""
+"result" = ""
