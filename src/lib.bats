@@ -242,6 +242,15 @@ static int _proc_spawn(
   return pid;
 }
 
+/* strerror(code) copied into buf[0, max); its length */
+static int _proc_error_text(int code, char *buf, int max) {
+  const char *s = strerror(code);
+  size_t n = s ? strlen(s) : 0;
+  if (n > (size_t)max) n = (size_t)max;
+  if (n) memcpy(buf, s, n);
+  return (int)n;
+}
+
 static int _spawn_get_stdin_fd(void) { return _spawn_res.stdin_parent_fd; }
 static int _spawn_get_stdout_fd(void) { return _spawn_res.stdout_parent_fd; }
 static int _spawn_get_stderr_fd(void) { return _spawn_res.stderr_parent_fd; }
@@ -311,6 +320,11 @@ end
 #pub fn child_pid(c: !child): int
 
 #pub fn pipe_end_close {b:bool} (p: pipe_end(b)): void
+
+(* The OS's description of error code (strerror), which Rust's io::Error
+   shows before " (os error <code>)", copied into buf; its length *)
+#pub fn os_error_text {l:agz}{n:pos}
+  (code: int, buf: !$A.arr(byte, l, n), max: int n): [k:nat | k <= n] int k
 
 (* path: an executable's path, or a command name without '/', looked up
    on this process's PATH as execvp does. Fails with the errno (> 0) of
@@ -490,6 +504,21 @@ implement child_pid(c) = let
   val p = pid
   prval () = fold@(c)
 in p end
+
+implement os_error_text {l}{n} (code, buf, max) =
+  $UNSAFE begin $extfcall([k:nat | k <= n] int k, "_proc_error_text", code,
+    $UNSAFE.castvwtp1{ptr}(buf), max) end
+
+(* Static test: os_error_text's length indexes its buffer *)
+fn _last_byte {l:agz}{n:pos}{k:nat | k <= n}
+  (buf: !$A.arr(byte, l, n), k: int k): int =
+  if k > 0 then byte2int0($A.get<byte>(buf, k - 1)) else 0
+
+fn _test_os_error_text_bounded (): void = let
+  val buf = $A.alloc<byte>(64)
+  val k = os_error_text(2, buf, 64)
+  val _ = _last_byte(buf, k)
+in $A.free<byte>(buf) end
 
 implement pipe_end_close {b} (p) =
   case+ p of

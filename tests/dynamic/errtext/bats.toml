@@ -1,0 +1,10 @@
+[package]
+name = "errtext"
+kind = "bin"
+
+[dependencies]
+"array" = ""
+"builder" = ""
+"list" = ""
+"process" = ""
+"result" = ""
