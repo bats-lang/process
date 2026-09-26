@@ -16,7 +16,6 @@
 #use builder as B
 #use list as L
 #use result as R
-#use str as S
 #use file as F
 
 (* ============================================================
@@ -352,18 +351,19 @@ fn _build_from_list(xs: $L.listv(arg_entry)): @($B.builder_v, int) = let
     | ~$L.list_vt_nil() => count
     | ~$L.list_vt_cons(@(arr, len), tl) => let
         val @(fz, bv) = $A.freeze<byte>(arr)
-        fun copy {lb:agz}{fuel:nat} .<fuel>.
+        (* bv[i, len) into b; i < 524288 proves each read *)
+        fun copy {lb:agz}{i:nat | i <= 524288} .<524288 - i>.
           (bv: !$A.borrow(byte, lb, 524288),
            b: !$B.builder_v >> $B.builder_v,
-           i: int, len: int, fuel: int fuel): void =
-          if fuel <= 0 then ()
+           i: int i, len: int): void =
+          if i >= 524288 then ()
           else if i >= len then ()
           else let
-            val c = $S.borrow_byte(bv, i, 524288)
+            val c = byte2int0($A.read<byte>(bv, i))
             val n = $B.length(b)
             val () = (if n < 524288 - 1 then $B.put_char(b, c) else ())
-          in copy(bv, b, i + 1, len, fuel - 1) end
-        val () = copy(bv, b, 0, len, 524288)
+          in copy(bv, b, i + 1, len) end
+        val () = copy(bv, b, 0, len)
         val n2 = $B.length(b)
         val () = (if n2 < 524288 - 1 then $B.put_char(b, 0) else ())
         val () = $A.drop<byte>(fz, bv)
