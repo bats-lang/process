@@ -6,8 +6,9 @@
 #use result as R
 
 (* A command name without '/' is looked up on PATH: "sh" runs /bin/sh
-   (or wherever PATH finds it), and a name found nowhere makes the
-   child exit 127. *)
+   (or wherever PATH finds it), and spawn fails with ENOENT (2) for a
+   name found nowhere, as Rust's Command::spawn does; the child used to
+   start and exit 127. status: the exit code, or 1000 + spawn's error. *)
 fn arg {sn:nat | sn <= 1024} (s: string sn): $P.arg_entry = let
   var b = $B.create()
   val () = $B.bput(b, s)
@@ -33,14 +34,14 @@ in
       val () = $P.pipe_end_close(o)
       val () = $P.pipe_end_close(e)
     in case+ $P.child_wait(c) of | ~$R.ok(n) => n | ~$R.err(_) => ~1 end
-  | ~$R.err(_) => ~1
+  | ~$R.err(e) => 1000 + e
 end
 
 implement main0 () = let
   val found = status("sh")
   val missing = status("no-such-command-for-bats-tests")
 in
-  if found = 4 && missing = 127 then println! ("search: all cases pass")
+  if found = 4 && missing = 1002 then println! ("search: all cases pass")
   else let
     val () = println! ("FAIL search: found=", found, " missing=", missing)
   in exit_void(1) end
