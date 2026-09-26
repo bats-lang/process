@@ -1,0 +1,10 @@
+[package]
+name = "env"
+kind = "bin"
+
+[dependencies]
+"array" = ""
+"builder" = ""
+"list" = ""
+"process" = ""
+"result" = ""

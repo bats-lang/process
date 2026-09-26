@@ -39,6 +39,8 @@ typedef struct {
   int stderr_parent_fd;
 } _spawn_result_t;
 
+extern char **environ;
+
 /* Global to pass result back (avoids returning struct by value issues) */
 static _spawn_result_t _spawn_res;
 
@@ -125,7 +127,9 @@ static int _proc_spawn(
     } else if (stderr_mode == 2) {
       int dn = open("/dev/null", O_WRONLY); if (dn >= 0) { dup2(dn, 2); close(dn); }
     }
-    execve(path, (char *const *)argv_ptrs, (char *const *)envp_ptrs);
+    /* envp_count < 0: the parent's environment */
+    execve(path, (char *const *)argv_ptrs,
+           envp_count < 0 ? environ : (char *const *)envp_ptrs);
     _exit(127);
   }
 
@@ -215,6 +219,17 @@ end
   (path: !$A.borrow(byte, lp, 524288),
    argv: $L.listv(arg_entry),
    envp: $L.listv(arg_entry),
+   stdin_cfg: stream_config(sin),
+   stdout_cfg: stream_config(sout),
+   stderr_cfg: stream_config(serr))
+  : $R.result(spawn_pipes(sin, sout, serr), int)
+
+(* As spawn, with the parent's environment instead of an envp list. *)
+#pub fn spawn_inherit_env
+  {sin:bool}{sout:bool}{serr:bool}
+  {lp:agz}
+  (path: !$A.borrow(byte, lp, 524288),
+   argv: $L.listv(arg_entry),
    stdin_cfg: stream_config(sin),
    stdout_cfg: stream_config(sout),
    stderr_cfg: stream_config(serr))
@@ -373,6 +388,22 @@ implement spawn {sin}{sout}{serr}{lp}
   val @(envp_arr, _) = $B.to_arr(envp_b)
   val @(fz_e, bv_e) = $A.freeze<byte>(envp_arr)
   val r = _spawn_raw(path, bv_a, argc, bv_e, envp_c,
+    stdin_cfg, stdout_cfg, stderr_cfg)
+  val () = $A.drop<byte>(fz_a, bv_a)
+  val () = $A.free<byte>($A.thaw<byte>(fz_a))
+  val () = $A.drop<byte>(fz_e, bv_e)
+  val () = $A.free<byte>($A.thaw<byte>(fz_e))
+in r end
+
+implement spawn_inherit_env {sin}{sout}{serr}{lp}
+  (path, argv, stdin_cfg, stdout_cfg, stderr_cfg) = let
+  val @(argv_b, argc) = _build_from_list(argv)
+  val @(argv_arr, _) = $B.to_arr(argv_b)
+  val @(fz_a, bv_a) = $A.freeze<byte>(argv_arr)
+  val @(envp_b, _) = _build_from_list($L.list_vt_nil())
+  val @(envp_arr, _) = $B.to_arr(envp_b)
+  val @(fz_e, bv_e) = $A.freeze<byte>(envp_arr)
+  val r = _spawn_raw(path, bv_a, argc, bv_e, ~1,
     stdin_cfg, stdout_cfg, stderr_cfg)
   val () = $A.drop<byte>(fz_a, bv_a)
   val () = $A.free<byte>($A.thaw<byte>(fz_a))
