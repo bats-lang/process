@@ -31,6 +31,7 @@ $UNSAFE begin
 #include <unistd.h>
 #include <sys/wait.h>
 #include <fcntl.h>
+#include <errno.h>
 #include <string.h>
 
 typedef struct {
@@ -87,20 +88,37 @@ static int _proc_spawn(
   int stderr_pipe[2] = {-1, -1};
 
   if (stdin_mode == 0) {
-    if (pipe(stdin_pipe) < 0) return -1;
+    if (pipe(stdin_pipe) < 0) return -(errno > 0 ? errno : 1);
   }
   if (stdout_mode == 0) {
     if (pipe(stdout_pipe) < 0) {
+      int e = errno;
       if (stdin_pipe[0] >= 0) { close(stdin_pipe[0]); close(stdin_pipe[1]); }
-      return -1;
+      return -(e > 0 ? e : 1);
     }
   }
   if (stderr_mode == 0) {
     if (pipe(stderr_pipe) < 0) {
+      int e = errno;
       if (stdin_pipe[0] >= 0) { close(stdin_pipe[0]); close(stdin_pipe[1]); }
       if (stdout_pipe[0] >= 0) { close(stdout_pipe[0]); close(stdout_pipe[1]); }
-      return -1;
+      return -(e > 0 ? e : 1);
     }
+  }
+
+  /* The child writes errno here when exec fails; close-on-exec, so a
+     successful exec closes it and the parent reads nothing (as Rust's
+     Command::spawn does) */
+  int exec_err[2] = {-1, -1};
+  if (pipe(exec_err) < 0
+      || fcntl(exec_err[0], F_SETFD, FD_CLOEXEC) < 0
+      || fcntl(exec_err[1], F_SETFD, FD_CLOEXEC) < 0) {
+    int e = errno;
+    if (exec_err[0] >= 0) { close(exec_err[0]); close(exec_err[1]); }
+    if (stdin_pipe[0] >= 0) { close(stdin_pipe[0]); close(stdin_pipe[1]); }
+    if (stdout_pipe[0] >= 0) { close(stdout_pipe[0]); close(stdout_pipe[1]); }
+    if (stderr_pipe[0] >= 0) { close(stderr_pipe[0]); close(stderr_pipe[1]); }
+    return -(e > 0 ? e : 1);
   }
 
   const char *argv_ptrs[256];
@@ -134,10 +152,11 @@ static int _proc_spawn(
     while (environ[n]) n++;
     envv = (char **)malloc((n + (size_t)ei + 1) * sizeof(char *));
     if (!envv) {
+      close(exec_err[0]); close(exec_err[1]);
       if (stdin_pipe[0] >= 0) { close(stdin_pipe[0]); close(stdin_pipe[1]); }
       if (stdout_pipe[0] >= 0) { close(stdout_pipe[0]); close(stdout_pipe[1]); }
       if (stderr_pipe[0] >= 0) { close(stderr_pipe[0]); close(stderr_pipe[1]); }
-      return -1;
+      return -ENOMEM;
     }
     for (j = 0; j < n; j++) {
       size_t len = strcspn(environ[j], "=");
@@ -152,14 +171,17 @@ static int _proc_spawn(
 
   int pid = fork();
   if (pid < 0) {
+    int e = errno;
     free(envv);
+    close(exec_err[0]); close(exec_err[1]);
     if (stdin_pipe[0] >= 0) { close(stdin_pipe[0]); close(stdin_pipe[1]); }
     if (stdout_pipe[0] >= 0) { close(stdout_pipe[0]); close(stdout_pipe[1]); }
     if (stderr_pipe[0] >= 0) { close(stderr_pipe[0]); close(stderr_pipe[1]); }
-    return -1;
+    return -(e > 0 ? e : 1);
   }
 
   if (pid == 0) {
+    close(exec_err[0]);
     if (stdin_mode == 0) {
       dup2(stdin_pipe[0], 0); close(stdin_pipe[0]); close(stdin_pipe[1]);
     } else if (stdin_mode == 1) {
@@ -183,10 +205,33 @@ static int _proc_spawn(
     }
     _exec_search(path, (char *const *)argv_ptrs,
            inherit ? envv : (char *const *)envp_ptrs);
+    {
+      int e = errno;
+      ssize_t w;
+      do { w = write(exec_err[1], &e, sizeof e); } while (w < 0 && errno == EINTR);
+    }
     _exit(127);
   }
 
   free(envv);
+  close(exec_err[1]);
+  {
+    int e = 0;
+    ssize_t r;
+    do { r = read(exec_err[0], &e, sizeof e); } while (r < 0 && errno == EINTR);
+    close(exec_err[0]);
+    if (r == (ssize_t)sizeof e) {
+      int st;
+      while (waitpid(pid, &st, 0) < 0 && errno == EINTR) {}
+      if (stdin_pipe[0] >= 0) { close(stdin_pipe[0]); close(stdin_pipe[1]); }
+      if (stdout_pipe[0] >= 0) { close(stdout_pipe[0]); close(stdout_pipe[1]); }
+      if (stderr_pipe[0] >= 0) { close(stderr_pipe[0]); close(stderr_pipe[1]); }
+      if (stdin_mode == 1) close(stdin_fd);
+      if (stdout_mode == 1) close(stdout_fd);
+      if (stderr_mode == 1) close(stderr_fd);
+      return -(e > 0 ? e : 1);
+    }
+  }
   if (stdin_pipe[0] >= 0) { close(stdin_pipe[0]); _spawn_res.stdin_parent_fd = stdin_pipe[1]; }
   if (stdout_pipe[1] >= 0) { close(stdout_pipe[1]); _spawn_res.stdout_parent_fd = stdout_pipe[0]; }
   if (stderr_pipe[1] >= 0) { close(stderr_pipe[1]); _spawn_res.stderr_parent_fd = stderr_pipe[0]; }
@@ -268,7 +313,9 @@ end
 #pub fn pipe_end_close {b:bool} (p: pipe_end(b)): void
 
 (* path: an executable's path, or a command name without '/', looked up
-   on this process's PATH as execvp does. *)
+   on this process's PATH as execvp does. Fails with the errno (> 0) of
+   what went wrong, including an exec that could not run (ENOENT for a
+   command found nowhere), as Rust's Command::spawn does. *)
 #pub fn spawn
   {sin:bool}{sout:bool}{serr:bool}
   {lp:agz}
@@ -418,7 +465,7 @@ in
     val () = _consume_cfg(stdin_cfg)
     val () = _consume_cfg(stdout_cfg)
     val () = _consume_cfg(stderr_cfg)
-  in $R.err(~1) end
+  in $R.err(0 - pid) end
 end
 
 implement child_wait(c) = let
