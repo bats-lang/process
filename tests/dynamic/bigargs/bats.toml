@@ -1,0 +1,10 @@
+[package]
+name = "bigargs"
+kind = "bin"
+
+[dependencies]
+"array" = ""
+"builder" = ""
+"list" = ""
+"process" = ""
+"result" = ""
