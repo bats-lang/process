@@ -1,5 +1,26 @@
 # process
 
+## An argument is an array of the size it needs (#59)
+
+`arg_entry` is `[l:agz][cap:pos][n:nat | n <= cap; cap <= ARG_ENTRY_MAX]
+@(arr(byte, l, cap), int n)`: an entry owns an array of its own capacity
+and says how many of its bytes are the content, so the type states the
+length and the bound (`ARG_ENTRY_MAX` is 524288). A builder's `into_arr` is
+an entry as it is (a short argument takes 64 bytes, not 524288), and so is
+a builder's `to_arr` (an array of `BUILDER_CAP` bytes), so a caller that
+builds entries that way is unchanged; a caller that made an entry from an
+array and a length it had no proof about must now have one.
+
+What a spawn accepts is unchanged and now in the types: the entries of a
+list and the NUL after each take at most `ARG_TOTAL_MAX` (524287) bytes,
+else the result is E2BIG. `_build_from_list` joins them into a builder of
+that type (`_fitted`), reads each byte at an index proved below the
+entry's length and capacity, and the array spawn hands the C is that
+builder's own (`into_arr`), as big as the entries are. `spawn`'s `path` is
+still an array of 524288 bytes: its C reads a string from it, and nothing
+in the types says where its NUL is, so a smaller one has to say its size at
+run time (not done).
+
 ## CI is pinned
 
 Every input to CI is pinned in the source (bats-lang/repository-prototype#269),
