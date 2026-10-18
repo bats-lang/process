@@ -39,3 +39,8 @@ jobs:
         run: |
           sudo apt-get install -y valgrind
           tests/dynamic/run.sh "$REPOSITORY"
+
+      - name: Static tests
+        env:
+          REPOSITORY: ${{ steps.bats.outputs.repository }}
+        run: tests/static/run.sh "$REPOSITORY"
