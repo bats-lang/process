@@ -315,8 +315,23 @@ end
       pipe_end(serr)
     )
 
-(* An argv/envp entry: owned array + content length. Consumed by spawn. *)
-#pub vtypedef arg_entry = [l:agz] @($A.arr(byte, l, 524288), int)
+(* The most bytes one argv/envp entry's array may hold. *)
+#pub stadef ARG_ENTRY_MAX = 524288
+
+(* The most bytes all the entries of one list may take together, each
+   with the NUL spawn writes after it (a list that takes more is E2BIG).
+   One less than ARG_ENTRY_MAX, so the array spawn builds from a list
+   always ends in a zero byte past the last NUL. *)
+#pub stadef ARG_TOTAL_MAX = 524287
+
+(* An argv/envp entry: an owned array of cap bytes (cap is the entry's
+   own, 1 to ARG_ENTRY_MAX: an argument needs no more than it takes) and
+   the content length n <= cap, which is the first n bytes of the array.
+   Consumed by spawn. An array of ARG_ENTRY_MAX bytes with its length
+   (a builder's to_arr) is an entry, as is a builder's into_arr. *)
+#pub vtypedef arg_entry =
+  [l:agz][cap:pos][n:nat | n <= cap; cap <= ARG_ENTRY_MAX]
+  @($A.arr(byte, l, cap), int n)
 
 (* ============================================================
    Public API
@@ -413,32 +428,35 @@ fn _consume_cfg {b:bool} (cfg: stream_config(b)): void =
   | ~dev_null() => ()
   | ~inherit() => ()
 
+(* A builder holding at most ARG_TOTAL_MAX bytes: the entries of a list
+   and their NULs, as far as they fit *)
+vtypedef _fitted = [n:nat | n <= ARG_TOTAL_MAX] $B.builder(n)
+
 (* The entries of xs, each NUL-terminated, in one builder, and their
-   count; false when they do not all fit (the builder holds 524288
-   bytes, and an entry's array 524288), which spawn reports as E2BIG
-   rather than run the program on a cut-short list *)
-fn _build_from_list(xs: $L.listv(arg_entry)): @($B.builder_v, int, bool) = let
+   count; false when they do not all fit (ARG_TOTAL_MAX bytes of entries
+   and NULs, the builder's type), which spawn reports as E2BIG rather
+   than run the program on a cut-short list. Each byte read is proved
+   inside its entry's array: i < n <= cap. *)
+fn _build_from_list(xs: $L.listv(arg_entry)): @(_fitted, int, bool) = let
   fun loop {n:nat} .<n>.
     (xs: $L.list_vt(arg_entry, n),
-     b: !$B.builder_v >> $B.builder_v, count: int, fits: bool): @(int, bool) =
+     b: !_fitted >> _fitted, count: int, fits: bool): @(int, bool) =
     case+ xs of
     | ~$L.list_vt_nil() => @(count, fits)
     | ~$L.list_vt_cons(@(arr, len), tl) => let
         val @(fz, bv) = $A.freeze<byte>(arr)
-        (* bv[i, len) into b, whether it all fit; i < 524288 proves
-           each read *)
-        fun copy {lb:agz}{i:nat | i <= 524288} .<524288 - i>.
-          (bv: !$A.borrow(byte, lb, 524288),
-           b: !$B.builder_v >> $B.builder_v,
-           i: int i, len: int): bool =
+        (* bv[i, len) into b, whether it all fit *)
+        fun copy {lb:agz}{cap:pos}{k:nat | k <= cap}{i:nat | i <= k} .<k - i>.
+          (bv: !$A.borrow(byte, lb, cap),
+           b: !_fitted >> _fitted,
+           i: int i, len: int k): bool =
           if i >= len then true
-          else if i >= 524288 then false
-          else if $B.length(b) >= 524288 - 1 then false
+          else if $B.length(b) >= 524287 then false
           else let
             val () = $B.put_char(b, $AR.low_byte(byte2int0($A.read<byte>(bv, i))))
           in copy(bv, b, i + 1, len) end
         val all = copy(bv, b, 0, len)
-        val room = $B.length(b) < 524288 - 1
+        val room = $B.length(b) < 524287
         val () = (if room then $B.put_char(b, 0) else ())
         val () = $A.drop<byte>(fz, bv)
         val () = $A.free<byte>($A.thaw<byte>(fz))
@@ -554,10 +572,10 @@ in $R.err(E2BIG) end
 implement spawn {sin}{sout}{serr}{lp}
   (path, argv, envp, stdin_cfg, stdout_cfg, stderr_cfg) = let
   val @(argv_b, argc, argv_fits) = _build_from_list(argv)
-  val @(argv_arr, _) = $B.to_arr(argv_b)
+  val @(argv_arr, _) = $B.into_arr(argv_b)
   val @(fz_a, bv_a) = $A.freeze<byte>(argv_arr)
   val @(envp_b, envp_c, envp_fits) = _build_from_list(envp)
-  val @(envp_arr, _) = $B.to_arr(envp_b)
+  val @(envp_arr, _) = $B.into_arr(envp_b)
   val @(fz_e, bv_e) = $A.freeze<byte>(envp_arr)
   val r = (if argv_fits && envp_fits then
     _spawn_raw(path, bv_a, argc, bv_e, envp_c, stdin_cfg, stdout_cfg, stderr_cfg)
@@ -575,10 +593,10 @@ implement spawn_inherit_env {sin}{sout}{serr}{lp}
 implement spawn_inherit_env_with {sin}{sout}{serr}{lp}
   (path, argv, extra, stdin_cfg, stdout_cfg, stderr_cfg) = let
   val @(argv_b, argc, argv_fits) = _build_from_list(argv)
-  val @(argv_arr, _) = $B.to_arr(argv_b)
+  val @(argv_arr, _) = $B.into_arr(argv_b)
   val @(fz_a, bv_a) = $A.freeze<byte>(argv_arr)
   val @(envp_b, extra_c, extra_fits) = _build_from_list(extra)
-  val @(envp_arr, _) = $B.to_arr(envp_b)
+  val @(envp_arr, _) = $B.into_arr(envp_b)
   val @(fz_e, bv_e) = $A.freeze<byte>(envp_arr)
   val r = (if argv_fits && extra_fits then
     _spawn_raw(path, bv_a, argc, bv_e, ~(extra_c + 1), stdin_cfg, stdout_cfg, stderr_cfg)

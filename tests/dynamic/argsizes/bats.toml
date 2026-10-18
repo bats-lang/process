@@ -1,0 +1,10 @@
+[package]
+name = "argsizes"
+kind = "bin"
+
+[dependencies]
+"array" = ""
+"builder" = ""
+"list" = ""
+"process" = ""
+"result" = ""
