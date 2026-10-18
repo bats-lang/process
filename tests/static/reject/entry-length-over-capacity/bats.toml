@@ -1,0 +1,7 @@
+[package]
+name = "entry_length_over_capacity"
+kind = "bin"
+
+[dependencies]
+"array" = ""
+"process" = ""

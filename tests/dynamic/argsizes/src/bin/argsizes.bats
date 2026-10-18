@@ -114,11 +114,11 @@ implement main0 () = let
   (* the entries and NULs of the list: "sh", "-c", the script (13 bytes),
      "sh" are 3 + 3 + 14 + 3 = 23; five arguments of 100000 bytes are 5 *
      100001 = 500005; the sixth is m bytes and its NUL. 23 + 500005 + m +
-     1 = 524287 for m = 258 *)
-  val at_limit = run(bp, sh_c("test $# -eq 6", $L.list_vt_cons(as_of(258), repeat(5, 100000, $L.list_vt_nil()))))
-  val over_limit = run(bp, sh_c("test $# -eq 6", $L.list_vt_cons(as_of(259), repeat(5, 100000, $L.list_vt_nil()))))
+     1 = 524287 for m = 24258 *)
+  val at_limit = run(bp, sh_c("test $# -eq 6", $L.list_vt_cons(as_of(24258), repeat(5, 100000, $L.list_vt_nil()))))
+  val over_limit = run(bp, sh_c("test $# -eq 6", $L.list_vt_cons(as_of(24259), repeat(5, 100000, $L.list_vt_nil()))))
   (* the same arguments in arrays of the old size *)
-  val at_limit_old = run(bp, sh_c("test $# -eq 6", $L.list_vt_cons(as_old(258), $L.list_vt_cons(as_old(100000),
+  val at_limit_old = run(bp, sh_c("test $# -eq 6", $L.list_vt_cons(as_old(24258), $L.list_vt_cons(as_old(100000),
     $L.list_vt_cons(as_old(100000), $L.list_vt_cons(as_old(100000), $L.list_vt_cons(as_old(100000),
     $L.list_vt_cons(as_old(100000), $L.list_vt_nil()))))))))
 

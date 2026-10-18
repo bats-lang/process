@@ -1,0 +1,7 @@
+[package]
+name = "entry_exact"
+kind = "bin"
+
+[dependencies]
+"array" = ""
+"process" = ""
