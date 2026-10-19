@@ -19,12 +19,12 @@ fn finish {sin,sout,serr:bool}
   | ~$R.err(_) => ()
 
 (* The NUL of one path does not serve another: the proof names the cells
-   of the path made by path_of_string, and this array holds other cells *)
+   of the path made by path_of_string_proved, and this array holds other cells *)
 implement main0 () = let
-  val (nul | pa) = $P.path_of_string("/bin/sh")
+  val (nul | pa) = $P.path_of_string_proved("/bin/sh")
   val (_ | other) = $A.barr_of_arr($A.alloc<byte>(8))
   val @(fz, cb) = $A.barr_freeze(other)
-  val r = $P.spawn_inherit_env(nul | cb, $L.list_vt_nil{$P.arg_entry}(),
+  val r = $P.spawn_inherit_env_proved(nul | cb, $L.list_vt_nil{$P.arg_entry}(),
     $P.dev_null(), $P.dev_null(), $P.dev_null())
   val () = finish(r)
   val () = $A.cborrow_drop(fz, cb)

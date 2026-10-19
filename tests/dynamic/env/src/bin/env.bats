@@ -33,13 +33,13 @@ fn exit_code {sin,sout,serr:bool} (r: $R.result($P.spawn_pipes(sin, sout, serr),
   | ~$R.err(_) => ~1
 
 implement main0 () = let
-  val (nul | pa) = $P.path_of_string("/bin/sh")
+  val (nul | pa) = $P.path_of_string_proved("/bin/sh")
   val @(fp, bp) = $A.barr_freeze(pa)
-  val inherited = exit_code($P.spawn_inherit_env(nul | bp, argv(), $P.dev_null(), $P.dev_null(), $P.dev_null()))
-  val empty = exit_code($P.spawn(nul | bp, argv(), $L.list_vt_nil{$P.arg_entry}(), $P.dev_null(), $P.dev_null(), $P.dev_null()))
+  val inherited = exit_code($P.spawn_inherit_env_proved(nul | bp, argv(), $P.dev_null(), $P.dev_null(), $P.dev_null()))
+  val empty = exit_code($P.spawn_proved(nul | bp, argv(), $L.list_vt_nil{$P.arg_entry}(), $P.dev_null(), $P.dev_null(), $P.dev_null()))
   (* extra entries replace HOME and add BATS_EXTRA; PATH is kept *)
   val extra = $L.list_vt_cons(arg("HOME=/replaced"), $L.list_vt_cons(arg("BATS_EXTRA=yes"), $L.list_vt_nil()))
-  val with_extra = exit_code($P.spawn_inherit_env_with(nul | bp,
+  val with_extra = exit_code($P.spawn_inherit_env_with_proved(nul | bp,
     sh_c("test \"$HOME\" = /replaced && test \"$BATS_EXTRA\" = yes && test -n \"$PATH\""),
     extra, $P.dev_null(), $P.dev_null(), $P.dev_null()))
   val () = $A.cborrow_drop(fp, bp)

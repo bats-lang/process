@@ -16,11 +16,11 @@ fn arg {sn:nat | sn <= 1024} (s: string sn): $P.arg_entry = let
 in @(arr, len) end
 
 fn status {sn:nat | sn <= 1024} (cmd: string sn): int = let
-  val (nul | pa) = $P.path_of_string(cmd)
+  val (nul | pa) = $P.path_of_string_proved(cmd)
   val @(fp, bp) = $A.barr_freeze(pa)
   val argv = $L.list_vt_cons(arg("sh"), $L.list_vt_cons(arg("-c"),
     $L.list_vt_cons(arg("exit 4"), $L.list_vt_nil())))
-  val r = $P.spawn_inherit_env(nul | bp, argv, $P.dev_null(), $P.dev_null(), $P.dev_null())
+  val r = $P.spawn_inherit_env_proved(nul | bp, argv, $P.dev_null(), $P.dev_null(), $P.dev_null())
   val () = $A.cborrow_drop(fp, bp)
   val () = $A.barr_free($A.barr_thaw(fp))
 in

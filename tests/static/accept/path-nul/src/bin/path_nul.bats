@@ -4,7 +4,7 @@
 #use process as P
 #use result as R
 
-(* A path from path_of_string carries its NUL (the proof NUL_AT); spawn
+(* A path from path_of_string_proved carries its NUL (the proof NUL_AT); spawn
    takes it with the path's borrow, and the path is freed after. *)
 fn finish {sin,sout,serr:bool}
   (r: $R.result($P.spawn_pipes(sin, sout, serr), int)): void =
@@ -21,9 +21,9 @@ fn finish {sin,sout,serr:bool}
   | ~$R.err(_) => ()
 
 implement main0 () = let
-  val (nul | pa) = $P.path_of_string("/bin/sh")
+  val (nul | pa) = $P.path_of_string_proved("/bin/sh")
   val @(fz, cb) = $A.barr_freeze(pa)
-  val r = $P.spawn_inherit_env(nul | cb, $L.list_vt_nil{$P.arg_entry}(),
+  val r = $P.spawn_inherit_env_proved(nul | cb, $L.list_vt_nil{$P.arg_entry}(),
     $P.dev_null(), $P.dev_null(), $P.dev_null())
   val () = finish(r)
   val () = $A.cborrow_drop(fz, cb)

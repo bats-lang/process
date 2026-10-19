@@ -89,20 +89,20 @@ fn outcome {sin,sout,serr:bool} (r: $R.result($P.spawn_pipes(sin, sout, serr), i
 
 fn run {lp:agz}{np:pos}{cs:$A.cells}{k:nat | k < np}
   (nul: $P.NUL_AT(cs, np, k) | bp: !$A.cborrow(lp, np, cs), argv: $L.listv($P.arg_entry)): int =
-  outcome($P.spawn_inherit_env(nul | bp, argv, $P.dev_null(), $P.dev_null(), $P.dev_null()))
+  outcome($P.spawn_inherit_env_proved(nul | bp, argv, $P.dev_null(), $P.dev_null(), $P.dev_null()))
 
 fn run_with {lp:agz}{np:pos}{cs:$A.cells}{k:nat | k < np}
   (nul: $P.NUL_AT(cs, np, k) | bp: !$A.cborrow(lp, np, cs), argv: $L.listv($P.arg_entry),
   extra: $L.listv($P.arg_entry)): int =
-  outcome($P.spawn_inherit_env_with(nul | bp, argv, extra, $P.dev_null(), $P.dev_null(), $P.dev_null()))
+  outcome($P.spawn_inherit_env_with_proved(nul | bp, argv, extra, $P.dev_null(), $P.dev_null(), $P.dev_null()))
 
 fn run_envp {lp:agz}{np:pos}{cs:$A.cells}{k:nat | k < np}
   (nul: $P.NUL_AT(cs, np, k) | bp: !$A.cborrow(lp, np, cs), argv: $L.listv($P.arg_entry),
   envp: $L.listv($P.arg_entry)): int =
-  outcome($P.spawn(nul | bp, argv, envp, $P.dev_null(), $P.dev_null(), $P.dev_null()))
+  outcome($P.spawn_proved(nul | bp, argv, envp, $P.dev_null(), $P.dev_null(), $P.dev_null()))
 
 implement main0 () = let
-  val (nul | pa) = $P.path_of_string("/bin/sh")
+  val (nul | pa) = $P.path_of_string_proved("/bin/sh")
   val @(fp, bp) = $A.barr_freeze(pa)
 
   (* an empty argument, a one-byte array, arrays of other capacities,

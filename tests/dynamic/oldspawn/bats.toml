@@ -1,0 +1,10 @@
+[package]
+name = "oldspawn"
+kind = "bin"
+
+[dependencies]
+"array" = ""
+"builder" = ""
+"list" = ""
+"process" = ""
+"result" = ""

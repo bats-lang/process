@@ -18,21 +18,38 @@ that type (`_fitted`), reads each byte at an index proved below the
 entry's length and capacity, and the array spawn hands the C is that
 builder's own (`into_arr`), as big as the entries are.
 
-## A path's NUL is in its type (#61)
+## Spawn keeps its old signatures; the proved ones are beside them (#61, #64)
 
-`spawn`'s C reads the executable's path as a C string, so the path must
-end inside its array. `path_of_string` makes one: the bytes of a string and
-a zero after them, in the builder's own array (at least the string's length
-plus one, not a fixed 524288 bytes), with the proof `NUL_AT(cs, n, k)`:
-byte `k` of the `n` bytes whose cells are `cs` is zero. The proof is made
-from the array package's own cell proofs (`CLEN`, `NTH` after `barr_set`),
-so nothing here is a runtime check. `spawn`, `spawn_inherit_env` and
-`spawn_inherit_env_with` take the proof and a `cborrow(lp, np, cs)` of the
-same cells (`barr_freeze`), and the type of the path is the only thing the
-C call relies on. `NUL_AT` is a dataprop, not linear, so one proof serves
-each spawn of the path. Rejected by `tests/static/reject/`: a cell that is
-not zero (`nul-not-zero`), a NUL of another array (`nul-other-array`), a
-byte past the array (`index-past-end`).
+`spawn`, `spawn_inherit_env` and `spawn_inherit_env_with` take
+`path: !borrow(byte, lp, 524288)`, as they always did. They are the
+**unproved forms, kept for compatibility**: their C reads the path as a
+string, and nothing in the types says where its NUL is, so only an array of
+524288 bytes is safe to pass. A dependent moves to the proved forms in a PR
+of its own; these three are removed by a ticket of their own, once every
+dependent has moved, and not before. (PR #62 replaced them in place; that
+failed `verify` in the package repository for pwa, whose published source
+calls the old ones, so #64 restored them.)
+
+The proved forms, `spawn_proved`, `spawn_inherit_env_proved` and
+`spawn_inherit_env_with_proved`, state the NUL in the type. `path_of_string_proved`
+makes the path: the bytes of a string and a zero after them, in the builder's
+own array (at least the string's length plus one, not a fixed 524288 bytes),
+with the proof `NUL_AT(cs, n, k)`: byte `k` of the `n` bytes whose cells are
+`cs` is zero. The proof is made from the array package's own cell proofs
+(`CLEN`, `NTH` after `barr_set`), so nothing here is a runtime check. The
+proved spawns take the proof and a `cborrow(lp, np, cs)` of the same cells
+(`barr_freeze`), and the type of the path is the only thing the C call
+relies on. `NUL_AT` is a dataprop, not linear, so one proof serves each
+spawn of the path. Rejected by `tests/static/reject/`: a cell that is not
+zero (`nul-not-zero`), a NUL of another array (`nul-other-array`), a byte
+past the array (`index-past-end`). `tests/dynamic/oldspawn` calls each of the
+three unproved forms, so an edit cannot drop them without a failing test.
+
+The name: a stricter variant is added beside the plain one with a word that
+says what it adds. arith's `and_proved` returns the number with the proof of
+what it is; array adds `barr_alloc` and `cborrow_get` beside `alloc` and
+`borrow_get`, never in place of them. `_proved` is arith's word, for a
+function whose call carries a proof.
 
 ## CI is pinned
 

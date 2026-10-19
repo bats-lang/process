@@ -16,11 +16,11 @@ fn arg {sn:nat | sn <= 1024} (s: string sn): $P.arg_entry = let
 in @(arr, len) end
 
 fn sh {sout:bool}{sn:nat | sn <= 1024} (script: string sn, out: $P.stream_config(sout)): int = let
-  val (nul | pa) = $P.path_of_string("/bin/sh")
+  val (nul | pa) = $P.path_of_string_proved("/bin/sh")
   val @(fp, bp) = $A.barr_freeze(pa)
   val argv = $L.list_vt_cons(arg("sh"), $L.list_vt_cons(arg("-c"),
     $L.list_vt_cons(arg(script), $L.list_vt_nil())))
-  val r = $P.spawn(nul | bp, argv, $L.list_vt_nil{$P.arg_entry}(), $P.dev_null(), out, $P.inherit())
+  val r = $P.spawn_proved(nul | bp, argv, $L.list_vt_nil{$P.arg_entry}(), $P.dev_null(), out, $P.inherit())
   val () = $A.cborrow_drop(fp, bp)
   val () = $A.barr_free($A.barr_thaw(fp))
 in

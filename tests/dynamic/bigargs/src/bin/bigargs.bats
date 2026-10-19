@@ -48,10 +48,10 @@ fn run_sh {lp:agz}{np:pos}{cs:$A.cells}{pk:nat | pk < np}{k:nat}
   val argv = $L.list_vt_cons(arg("sh"), $L.list_vt_cons(arg("-c"),
     $L.list_vt_cons(arg("test ${#1} -eq 100000"),
     $L.list_vt_cons(arg("sh"), bigs(k, $L.list_vt_nil())))))
-in outcome($P.spawn_inherit_env(nul | bp, argv, $P.dev_null(), $P.dev_null(), $P.dev_null())) end
+in outcome($P.spawn_inherit_env_proved(nul | bp, argv, $P.dev_null(), $P.dev_null(), $P.dev_null())) end
 
 implement main0 () = let
-  val (nul | pa) = $P.path_of_string("/bin/sh")
+  val (nul | pa) = $P.path_of_string_proved("/bin/sh")
   val @(fp, bp) = $A.barr_freeze(pa)
   val fits = run_sh(nul | bp, 4)
   val over = run_sh(nul | bp, 6)
