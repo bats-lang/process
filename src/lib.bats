@@ -335,8 +335,8 @@ end
 
 (* The NUL of a path: byte k of the n bytes whose cells are cs is zero, so
    the C string spawn reads from the path ends at k, inside the array. Made
-   only by path_of_string, from the array package's own proofs of the cells
-   (CLEN: n cells; NTH: cell k is 0). spawn borrows the path with the same
+   only by path_of_string_proved, from the array package's own proofs of the cells
+   (CLEN: n cells; NTH: cell k is 0). spawn_proved borrows the path with the same
    cells (cborrow), so the bytes it reads are the ones the proof names. A
    dataprop is not linear, so one proof serves every spawn of the path. *)
 #pub dataprop NUL_AT($A.cells, int, int) =
@@ -360,10 +360,60 @@ end
 #pub fn os_error_text {l:agz}{n:pos}
   (code: int, buf: !$A.arr(byte, l, n), max: int n): [k:nat | k <= n] int k
 
+(* The unproved form, kept for compatibility (#64): path is an array of
+   524288 bytes whose NUL the types do not place, so a caller must know it
+   holds one. A dependent moves to spawn_proved in a pull request of its
+   own; this stays until every dependent has.
+
+   path: an executable's path, or a command name without '/', looked up
+   on this process's PATH as execvp does. Fails with the errno (> 0) of
+   what went wrong, including an exec that could not run (ENOENT for a
+   command found nowhere), as Rust's Command::spawn does. *)
+#pub fn spawn
+  {sin:bool}{sout:bool}{serr:bool}
+  {lp:agz}
+  (path: !$A.borrow(byte, lp, 524288),
+   argv: $L.listv(arg_entry),
+   envp: $L.listv(arg_entry),
+   stdin_cfg: stream_config(sin),
+   stdout_cfg: stream_config(sout),
+   stderr_cfg: stream_config(serr))
+  : $R.result(spawn_pipes(sin, sout, serr), int)
+
+(* The unproved form, kept for compatibility (#64), as spawn is; the
+   proved one is spawn_inherit_env_with_proved.
+
+   As spawn, with the parent's environment plus the NAME=VALUE entries
+   of extra, each added or replacing that variable. *)
+#pub fn spawn_inherit_env_with
+  {sin:bool}{sout:bool}{serr:bool}
+  {lp:agz}
+  (path: !$A.borrow(byte, lp, 524288),
+   argv: $L.listv(arg_entry),
+   extra: $L.listv(arg_entry),
+   stdin_cfg: stream_config(sin),
+   stdout_cfg: stream_config(sout),
+   stderr_cfg: stream_config(serr))
+  : $R.result(spawn_pipes(sin, sout, serr), int)
+
+(* The unproved form, kept for compatibility (#64), as spawn is; the
+   proved one is spawn_inherit_env_proved.
+
+   As spawn, with the parent's environment instead of an envp list. *)
+#pub fn spawn_inherit_env
+  {sin:bool}{sout:bool}{serr:bool}
+  {lp:agz}
+  (path: !$A.borrow(byte, lp, 524288),
+   argv: $L.listv(arg_entry),
+   stdin_cfg: stream_config(sin),
+   stdout_cfg: stream_config(sout),
+   stderr_cfg: stream_config(serr))
+  : $R.result(spawn_pipes(sin, sout, serr), int)
+
 (* A path for spawn: the bytes of s, then a zero, in an array of the
    builder's own (at least sn + 1 bytes, not a copy of a fixed size). The
    zero is the last byte written, at index sn, and its proof is NUL_AT. *)
-#pub fn path_of_string {sn:nat | sn < $B.BUILDER_CAP} (s: string sn)
+#pub fn path_of_string_proved {sn:nat | sn < $B.BUILDER_CAP} (s: string sn)
   : [l:agz][n:pos][cs:$A.cells][k:nat | k < n]
     (NUL_AT(cs, n, k) | $A.barr(l, n, cs))
 
@@ -372,7 +422,7 @@ end
    the path's own cells. Fails with the errno (> 0) of what went wrong,
    including an exec that could not run (ENOENT for a command found
    nowhere), as Rust's Command::spawn does. *)
-#pub fn spawn
+#pub fn spawn_proved
   {sin:bool}{sout:bool}{serr:bool}
   {lp:agz}{np:pos}{cs:$A.cells}{k:nat | k < np}
   (nul: NUL_AT(cs, np, k) | path: !$A.cborrow(lp, np, cs),
@@ -383,9 +433,9 @@ end
    stderr_cfg: stream_config(serr))
   : $R.result(spawn_pipes(sin, sout, serr), int)
 
-(* As spawn, with the parent's environment plus the NAME=VALUE entries
+(* As spawn_proved, with the parent's environment plus the NAME=VALUE entries
    of extra, each added or replacing that variable. *)
-#pub fn spawn_inherit_env_with
+#pub fn spawn_inherit_env_with_proved
   {sin:bool}{sout:bool}{serr:bool}
   {lp:agz}{np:pos}{cs:$A.cells}{k:nat | k < np}
   (nul: NUL_AT(cs, np, k) | path: !$A.cborrow(lp, np, cs),
@@ -396,8 +446,8 @@ end
    stderr_cfg: stream_config(serr))
   : $R.result(spawn_pipes(sin, sout, serr), int)
 
-(* As spawn, with the parent's environment instead of an envp list. *)
-#pub fn spawn_inherit_env
+(* As spawn_proved, with the parent's environment instead of an envp list. *)
+#pub fn spawn_inherit_env_proved
   {sin:bool}{sout:bool}{serr:bool}
   {lp:agz}{np:pos}{cs:$A.cells}{k:nat | k < np}
   (nul: NUL_AT(cs, np, k) | path: !$A.cborrow(lp, np, cs),
@@ -491,11 +541,11 @@ in @(b, count, fits) end
    ============================================================ *)
 
 fn _spawn_raw
-  {lp:agz}{np:pos}{cs:$A.cells}{k:nat | k < np}
+  {lp:agz}
   {la:agz}{na:pos}
   {le:agz}{ne:pos}
   {sin:bool}{sout:bool}{serr:bool}
-  (nul: NUL_AT(cs, np, k) | path: !$A.cborrow(lp, np, cs),
+  (path: !$A.borrow(byte, lp, 524288),
    argv: !$A.borrow(byte, la, na), argv_count: int,
    envp: !$A.borrow(byte, le, ne), envp_count: int,
    stdin_cfg: stream_config(sin),
@@ -577,7 +627,103 @@ implement pipe_end_close {b} (p) =
   | ~pipe_fd(f) => $R.discard<int><$F.io_error>($F.file_close(f))
   | ~pipe_none() => ()
 
-implement path_of_string {sn} (s) = let
+(* E2BIG for an argument or environment list that does not fit;
+   consumes the stream configurations as a spawn does *)
+fn _too_big {sin,sout,serr:bool}
+  (stdin_cfg: stream_config(sin), stdout_cfg: stream_config(sout), stderr_cfg: stream_config(serr))
+  : $R.result(spawn_pipes(sin, sout, serr), int) = let
+  val () = _consume_cfg(stdin_cfg)
+  val () = _consume_cfg(stdout_cfg)
+  val () = _consume_cfg(stderr_cfg)
+in $R.err(E2BIG) end
+
+implement spawn {sin}{sout}{serr}{lp}
+  (path, argv, envp, stdin_cfg, stdout_cfg, stderr_cfg) = let
+  val @(argv_b, argc, argv_fits) = _build_from_list(argv)
+  val @(argv_arr, _) = $B.into_arr(argv_b)
+  val @(fz_a, bv_a) = $A.freeze<byte>(argv_arr)
+  val @(envp_b, envp_c, envp_fits) = _build_from_list(envp)
+  val @(envp_arr, _) = $B.into_arr(envp_b)
+  val @(fz_e, bv_e) = $A.freeze<byte>(envp_arr)
+  val r = (if argv_fits && envp_fits then
+    _spawn_raw(path, bv_a, argc, bv_e, envp_c, stdin_cfg, stdout_cfg, stderr_cfg)
+    else _too_big(stdin_cfg, stdout_cfg, stderr_cfg)): $R.result(spawn_pipes(sin, sout, serr), int)
+  val () = $A.drop<byte>(fz_a, bv_a)
+  val () = $A.free<byte>($A.thaw<byte>(fz_a))
+  val () = $A.drop<byte>(fz_e, bv_e)
+  val () = $A.free<byte>($A.thaw<byte>(fz_e))
+in r end
+
+implement spawn_inherit_env {sin}{sout}{serr}{lp}
+  (path, argv, stdin_cfg, stdout_cfg, stderr_cfg) =
+  spawn_inherit_env_with(path, argv, $L.list_vt_nil(), stdin_cfg, stdout_cfg, stderr_cfg)
+
+implement spawn_inherit_env_with {sin}{sout}{serr}{lp}
+  (path, argv, extra, stdin_cfg, stdout_cfg, stderr_cfg) = let
+  val @(argv_b, argc, argv_fits) = _build_from_list(argv)
+  val @(argv_arr, _) = $B.into_arr(argv_b)
+  val @(fz_a, bv_a) = $A.freeze<byte>(argv_arr)
+  val @(envp_b, extra_c, extra_fits) = _build_from_list(extra)
+  val @(envp_arr, _) = $B.into_arr(envp_b)
+  val @(fz_e, bv_e) = $A.freeze<byte>(envp_arr)
+  val r = (if argv_fits && extra_fits then
+    _spawn_raw(path, bv_a, argc, bv_e, ~(extra_c + 1), stdin_cfg, stdout_cfg, stderr_cfg)
+    else _too_big(stdin_cfg, stdout_cfg, stderr_cfg)): $R.result(spawn_pipes(sin, sout, serr), int)
+  val () = $A.drop<byte>(fz_a, bv_a)
+  val () = $A.free<byte>($A.thaw<byte>(fz_a))
+  val () = $A.drop<byte>(fz_e, bv_e)
+  val () = $A.free<byte>($A.thaw<byte>(fz_e))
+in r end
+
+(* ============================================================
+   The proved spawns (#61, kept beside the unproved ones by #64)
+   ============================================================ *)
+
+fn _spawn_raw_proved
+  {lp:agz}{np:pos}{cs:$A.cells}{k:nat | k < np}
+  {la:agz}{na:pos}
+  {le:agz}{ne:pos}
+  {sin:bool}{sout:bool}{serr:bool}
+  (nul: NUL_AT(cs, np, k) | path: !$A.cborrow(lp, np, cs),
+   argv: !$A.borrow(byte, la, na), argv_count: int,
+   envp: !$A.borrow(byte, le, ne), envp_count: int,
+   stdin_cfg: stream_config(sin),
+   stdout_cfg: stream_config(sout),
+   stderr_cfg: stream_config(serr))
+  : $R.result(spawn_pipes(sin, sout, serr), int) = let
+  val sin_mode = _cfg_mode(stdin_cfg)
+  val sin_fd = _cfg_fd(stdin_cfg)
+  val sout_mode = _cfg_mode(stdout_cfg)
+  val sout_fd = _cfg_fd(stdout_cfg)
+  val serr_mode = _cfg_mode(stderr_cfg)
+  val serr_fd = _cfg_fd(stderr_cfg)
+  val pid = $UNSAFE begin $extfcall(int, "_proc_spawn",
+    $UNSAFE.castvwtp1{ptr}(path),
+    $UNSAFE.castvwtp1{ptr}(argv), argv_count,
+    $UNSAFE.castvwtp1{ptr}(envp), envp_count,
+    sin_mode, sin_fd, sout_mode, sout_fd, serr_mode, serr_fd) end
+in
+  if pid >= 0 then let
+    val stdin_pfd = $UNSAFE begin $extfcall(int, "_spawn_get_stdin_fd") end
+    val stdout_pfd = $UNSAFE begin $extfcall(int, "_spawn_get_stdout_fd") end
+    val stderr_pfd = $UNSAFE begin $extfcall(int, "_spawn_get_stderr_fd") end
+    val sin_end = _build_pipe_end(sin_mode, stdin_pfd, stdin_cfg)
+    val sout_end = _build_pipe_end(sout_mode, stdout_pfd, stdout_cfg)
+    val serr_end = _build_pipe_end(serr_mode, stderr_pfd, stderr_cfg)
+    val () = _consume_cfg(stdin_cfg)
+    val () = _consume_cfg(stdout_cfg)
+    val () = _consume_cfg(stderr_cfg)
+  in
+    $R.ok(spawn_pipes_mk(child_mk(pid), sin_end, sout_end, serr_end))
+  end
+  else let
+    val () = _consume_cfg(stdin_cfg)
+    val () = _consume_cfg(stdout_cfg)
+    val () = _consume_cfg(stderr_cfg)
+  in $R.err(0 - pid) end
+end
+
+implement path_of_string_proved {sn} (s) = let
   var b = $B.create()
   val () = $B.bput(b, s)
   val () = $B.put_char(b, 0)
@@ -589,17 +735,7 @@ implement path_of_string {sn} (s) = let
   prval nul = NUL_mk(len_ok, nul_ok)
 in (nul | a) end
 
-(* E2BIG for an argument or environment list that does not fit;
-   consumes the stream configurations as a spawn does *)
-fn _too_big {sin,sout,serr:bool}
-  (stdin_cfg: stream_config(sin), stdout_cfg: stream_config(sout), stderr_cfg: stream_config(serr))
-  : $R.result(spawn_pipes(sin, sout, serr), int) = let
-  val () = _consume_cfg(stdin_cfg)
-  val () = _consume_cfg(stdout_cfg)
-  val () = _consume_cfg(stderr_cfg)
-in $R.err(E2BIG) end
-
-implement spawn {sin}{sout}{serr}{lp}{np}{cs}{k}
+implement spawn_proved {sin}{sout}{serr}{lp}{np}{cs}{k}
   (nul | path, argv, envp, stdin_cfg, stdout_cfg, stderr_cfg) = let
   val @(argv_b, argc, argv_fits) = _build_from_list(argv)
   val @(argv_arr, _) = $B.into_arr(argv_b)
@@ -608,7 +744,7 @@ implement spawn {sin}{sout}{serr}{lp}{np}{cs}{k}
   val @(envp_arr, _) = $B.into_arr(envp_b)
   val @(fz_e, bv_e) = $A.freeze<byte>(envp_arr)
   val r = (if argv_fits && envp_fits then
-    _spawn_raw(nul | path, bv_a, argc, bv_e, envp_c, stdin_cfg, stdout_cfg, stderr_cfg)
+    _spawn_raw_proved(nul | path, bv_a, argc, bv_e, envp_c, stdin_cfg, stdout_cfg, stderr_cfg)
     else _too_big(stdin_cfg, stdout_cfg, stderr_cfg)): $R.result(spawn_pipes(sin, sout, serr), int)
   val () = $A.drop<byte>(fz_a, bv_a)
   val () = $A.free<byte>($A.thaw<byte>(fz_a))
@@ -616,11 +752,11 @@ implement spawn {sin}{sout}{serr}{lp}{np}{cs}{k}
   val () = $A.free<byte>($A.thaw<byte>(fz_e))
 in r end
 
-implement spawn_inherit_env {sin}{sout}{serr}{lp}{np}{cs}{k}
+implement spawn_inherit_env_proved {sin}{sout}{serr}{lp}{np}{cs}{k}
   (nul | path, argv, stdin_cfg, stdout_cfg, stderr_cfg) =
-  spawn_inherit_env_with(nul | path, argv, $L.list_vt_nil(), stdin_cfg, stdout_cfg, stderr_cfg)
+  spawn_inherit_env_with_proved(nul | path, argv, $L.list_vt_nil(), stdin_cfg, stdout_cfg, stderr_cfg)
 
-implement spawn_inherit_env_with {sin}{sout}{serr}{lp}{np}{cs}{k}
+implement spawn_inherit_env_with_proved {sin}{sout}{serr}{lp}{np}{cs}{k}
   (nul | path, argv, extra, stdin_cfg, stdout_cfg, stderr_cfg) = let
   val @(argv_b, argc, argv_fits) = _build_from_list(argv)
   val @(argv_arr, _) = $B.into_arr(argv_b)
@@ -629,7 +765,7 @@ implement spawn_inherit_env_with {sin}{sout}{serr}{lp}{np}{cs}{k}
   val @(envp_arr, _) = $B.into_arr(envp_b)
   val @(fz_e, bv_e) = $A.freeze<byte>(envp_arr)
   val r = (if argv_fits && extra_fits then
-    _spawn_raw(nul | path, bv_a, argc, bv_e, ~(extra_c + 1), stdin_cfg, stdout_cfg, stderr_cfg)
+    _spawn_raw_proved(nul | path, bv_a, argc, bv_e, ~(extra_c + 1), stdin_cfg, stdout_cfg, stderr_cfg)
     else _too_big(stdin_cfg, stdout_cfg, stderr_cfg)): $R.result(spawn_pipes(sin, sout, serr), int)
   val () = $A.drop<byte>(fz_a, bv_a)
   val () = $A.free<byte>($A.thaw<byte>(fz_a))

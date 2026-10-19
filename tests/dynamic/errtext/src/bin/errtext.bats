@@ -22,10 +22,10 @@ fun print_bytes {l:agz}{n:pos}{f:nat} .<f>.
   in print_bytes(buf, i + 1, k, n, f - 1) end
 
 implement main0 () = let
-  val (nul | pa) = $P.path_of_string("no-such-command-for-bats-tests")
+  val (nul | pa) = $P.path_of_string_proved("no-such-command-for-bats-tests")
   val @(fp, bp) = $A.barr_freeze(pa)
   val argv = $L.list_vt_cons(arg("x"), $L.list_vt_nil())
-  val r = $P.spawn_inherit_env(nul | bp, argv, $P.dev_null(), $P.dev_null(), $P.dev_null())
+  val r = $P.spawn_inherit_env_proved(nul | bp, argv, $P.dev_null(), $P.dev_null(), $P.dev_null())
   val () = $A.cborrow_drop(fp, bp)
   val () = $A.barr_free($A.barr_thaw(fp))
   val code = (case+ r of
