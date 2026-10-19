@@ -16,10 +16,23 @@ list and the NUL after each take at most `ARG_TOTAL_MAX` (524287) bytes,
 else the result is E2BIG. `_build_from_list` joins them into a builder of
 that type (`_fitted`), reads each byte at an index proved below the
 entry's length and capacity, and the array spawn hands the C is that
-builder's own (`into_arr`), as big as the entries are. `spawn`'s `path` is
-still an array of 524288 bytes: its C reads a string from it, and nothing
-in the types says where its NUL is, so a smaller one has to say its size at
-run time (not done).
+builder's own (`into_arr`), as big as the entries are.
+
+## A path's NUL is in its type (#61)
+
+`spawn`'s C reads the executable's path as a C string, so the path must
+end inside its array. `path_of_string` makes one: the bytes of a string and
+a zero after them, in the builder's own array (at least the string's length
+plus one, not a fixed 524288 bytes), with the proof `NUL_AT(cs, n, k)`:
+byte `k` of the `n` bytes whose cells are `cs` is zero. The proof is made
+from the array package's own cell proofs (`CLEN`, `NTH` after `barr_set`),
+so nothing here is a runtime check. `spawn`, `spawn_inherit_env` and
+`spawn_inherit_env_with` take the proof and a `cborrow(lp, np, cs)` of the
+same cells (`barr_freeze`), and the type of the path is the only thing the
+C call relies on. `NUL_AT` is a dataprop, not linear, so one proof serves
+each spawn of the path. Rejected by `tests/static/reject/`: a cell that is
+not zero (`nul-not-zero`), a NUL of another array (`nul-other-array`), a
+byte past the array (`index-past-end`).
 
 ## CI is pinned
 

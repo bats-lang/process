@@ -22,15 +22,12 @@ fun print_bytes {l:agz}{n:pos}{f:nat} .<f>.
   in print_bytes(buf, i + 1, k, n, f - 1) end
 
 implement main0 () = let
-  var pb = $B.create()
-  val () = $B.bput(pb, "no-such-command-for-bats-tests")
-  val () = $B.put_char(pb, 0)
-  val @(pa, _) = $B.to_arr(pb)
-  val @(fp, bp) = $A.freeze<byte>(pa)
+  val (nul | pa) = $P.path_of_string("no-such-command-for-bats-tests")
+  val @(fp, bp) = $A.barr_freeze(pa)
   val argv = $L.list_vt_cons(arg("x"), $L.list_vt_nil())
-  val r = $P.spawn_inherit_env(bp, argv, $P.dev_null(), $P.dev_null(), $P.dev_null())
-  val () = $A.drop<byte>(fp, bp)
-  val () = $A.free<byte>($A.thaw<byte>(fp))
+  val r = $P.spawn_inherit_env(nul | bp, argv, $P.dev_null(), $P.dev_null(), $P.dev_null())
+  val () = $A.cborrow_drop(fp, bp)
+  val () = $A.barr_free($A.barr_thaw(fp))
   val code = (case+ r of
     | ~$R.ok(sp) => let
         val+ ~$P.spawn_pipes_mk(c, i, o, e) = sp

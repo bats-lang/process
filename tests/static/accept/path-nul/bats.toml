@@ -1,0 +1,9 @@
+[package]
+name = "path_nul"
+kind = "bin"
+
+[dependencies]
+"array" = ""
+"list" = ""
+"process" = ""
+"result" = ""

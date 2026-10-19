@@ -43,22 +43,20 @@ fn outcome {sin,sout,serr:bool} (r: $R.result($P.spawn_pipes(sin, sout, serr), i
   | ~$R.err(e) => ~e
 
 (* sh -c SCRIPT sh followed by k big arguments *)
-fn run_sh {lp:agz}{k:nat} (bp: !$A.borrow(byte, lp, 524288), k: int k): int = let
+fn run_sh {lp:agz}{np:pos}{cs:$A.cells}{pk:nat | pk < np}{k:nat}
+  (nul: $P.NUL_AT(cs, np, pk) | bp: !$A.cborrow(lp, np, cs), k: int k): int = let
   val argv = $L.list_vt_cons(arg("sh"), $L.list_vt_cons(arg("-c"),
     $L.list_vt_cons(arg("test ${#1} -eq 100000"),
     $L.list_vt_cons(arg("sh"), bigs(k, $L.list_vt_nil())))))
-in outcome($P.spawn_inherit_env(bp, argv, $P.dev_null(), $P.dev_null(), $P.dev_null())) end
+in outcome($P.spawn_inherit_env(nul | bp, argv, $P.dev_null(), $P.dev_null(), $P.dev_null())) end
 
 implement main0 () = let
-  var pb = $B.create()
-  val () = $B.bput(pb, "/bin/sh")
-  val () = $B.put_char(pb, 0)
-  val @(pa, _) = $B.to_arr(pb)
-  val @(fp, bp) = $A.freeze<byte>(pa)
-  val fits = run_sh(bp, 4)
-  val over = run_sh(bp, 6)
-  val () = $A.drop<byte>(fp, bp)
-  val () = $A.free<byte>($A.thaw<byte>(fp))
+  val (nul | pa) = $P.path_of_string("/bin/sh")
+  val @(fp, bp) = $A.barr_freeze(pa)
+  val fits = run_sh(nul | bp, 4)
+  val over = run_sh(nul | bp, 6)
+  val () = $A.cborrow_drop(fp, bp)
+  val () = $A.barr_free($A.barr_thaw(fp))
 in
   if fits <> 0 then let
     val () = println! ("FAIL bigargs: 4 x 100000 bytes gave ", fits)

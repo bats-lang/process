@@ -16,16 +16,13 @@ fn arg {sn:nat | sn <= 1024} (s: string sn): $P.arg_entry = let
 in @(arr, len) end
 
 fn status {sn:nat | sn <= 1024} (cmd: string sn): int = let
-  var pb = $B.create()
-  val () = $B.bput(pb, cmd)
-  val () = $B.put_char(pb, 0)
-  val @(pa, _) = $B.to_arr(pb)
-  val @(fp, bp) = $A.freeze<byte>(pa)
+  val (nul | pa) = $P.path_of_string(cmd)
+  val @(fp, bp) = $A.barr_freeze(pa)
   val argv = $L.list_vt_cons(arg("sh"), $L.list_vt_cons(arg("-c"),
     $L.list_vt_cons(arg("exit 4"), $L.list_vt_nil())))
-  val r = $P.spawn_inherit_env(bp, argv, $P.dev_null(), $P.dev_null(), $P.dev_null())
-  val () = $A.drop<byte>(fp, bp)
-  val () = $A.free<byte>($A.thaw<byte>(fp))
+  val r = $P.spawn_inherit_env(nul | bp, argv, $P.dev_null(), $P.dev_null(), $P.dev_null())
+  val () = $A.cborrow_drop(fp, bp)
+  val () = $A.barr_free($A.barr_thaw(fp))
 in
   case+ r of
   | ~$R.ok(sp) => let
