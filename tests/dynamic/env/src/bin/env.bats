@@ -33,20 +33,17 @@ fn exit_code {sin,sout,serr:bool} (r: $R.result($P.spawn_pipes(sin, sout, serr),
   | ~$R.err(_) => ~1
 
 implement main0 () = let
-  var pb = $B.create()
-  val () = $B.bput(pb, "/bin/sh")
-  val () = $B.put_char(pb, 0)
-  val @(pa, _) = $B.to_arr(pb)
-  val @(fp, bp) = $A.freeze<byte>(pa)
-  val inherited = exit_code($P.spawn_inherit_env(bp, argv(), $P.dev_null(), $P.dev_null(), $P.dev_null()))
-  val empty = exit_code($P.spawn(bp, argv(), $L.list_vt_nil{$P.arg_entry}(), $P.dev_null(), $P.dev_null(), $P.dev_null()))
+  val (nul | pa) = $P.path_of_string("/bin/sh")
+  val @(fp, bp) = $A.barr_freeze(pa)
+  val inherited = exit_code($P.spawn_inherit_env(nul | bp, argv(), $P.dev_null(), $P.dev_null(), $P.dev_null()))
+  val empty = exit_code($P.spawn(nul | bp, argv(), $L.list_vt_nil{$P.arg_entry}(), $P.dev_null(), $P.dev_null(), $P.dev_null()))
   (* extra entries replace HOME and add BATS_EXTRA; PATH is kept *)
   val extra = $L.list_vt_cons(arg("HOME=/replaced"), $L.list_vt_cons(arg("BATS_EXTRA=yes"), $L.list_vt_nil()))
-  val with_extra = exit_code($P.spawn_inherit_env_with(bp,
+  val with_extra = exit_code($P.spawn_inherit_env_with(nul | bp,
     sh_c("test \"$HOME\" = /replaced && test \"$BATS_EXTRA\" = yes && test -n \"$PATH\""),
     extra, $P.dev_null(), $P.dev_null(), $P.dev_null()))
-  val () = $A.drop<byte>(fp, bp)
-  val () = $A.free<byte>($A.thaw<byte>(fp))
+  val () = $A.cborrow_drop(fp, bp)
+  val () = $A.barr_free($A.barr_thaw(fp))
 in
   if inherited = 0 && empty = 1 && with_extra = 0 then println! ("env: all cases pass")
   else let

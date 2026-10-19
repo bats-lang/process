@@ -40,19 +40,16 @@ fn exit_code {sin,sout,serr:bool} (r: $R.result($P.spawn_pipes(sin, sout, serr),
   | ~$R.err(_) => ~1
 
 implement main0 () = let
-  var pb = $B.create()
-  val () = $B.bput(pb, "/bin/sh")
-  val () = $B.put_char(pb, 0)
-  val @(pa, _) = $B.to_arr(pb)
-  val @(fp, bp) = $A.freeze<byte>(pa)
+  val (nul | pa) = $P.path_of_string("/bin/sh")
+  val @(fp, bp) = $A.barr_freeze(pa)
   (* sh -c SCRIPT sh a a ... : $# is the number of a's *)
   val argv = $L.list_vt_cons(arg("sh"), $L.list_vt_cons(arg("-c"),
     $L.list_vt_cons(arg("test $# -eq 400 && test \"$V0\" = x && test \"$V299\" = x"),
     $L.list_vt_cons(arg("sh"), args(400, $L.list_vt_nil())))))
-  val rc = exit_code($P.spawn_inherit_env_with(bp, argv, vars(300, $L.list_vt_nil()),
+  val rc = exit_code($P.spawn_inherit_env_with(nul | bp, argv, vars(300, $L.list_vt_nil()),
     $P.dev_null(), $P.dev_null(), $P.dev_null()))
-  val () = $A.drop<byte>(fp, bp)
-  val () = $A.free<byte>($A.thaw<byte>(fp))
+  val () = $A.cborrow_drop(fp, bp)
+  val () = $A.barr_free($A.barr_thaw(fp))
 in
   if rc = 0 then println! ("manyargs: all arguments and variables arrive")
   else let

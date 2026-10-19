@@ -87,27 +87,27 @@ fn outcome {sin,sout,serr:bool} (r: $R.result($P.spawn_pipes(sin, sout, serr), i
     in case+ $P.child_wait(c) of | ~$R.ok(n) => n | ~$R.err(_) => ~1000 end
   | ~$R.err(e) => ~e
 
-fn run {lp:agz} (bp: !$A.borrow(byte, lp, 524288), argv: $L.listv($P.arg_entry)): int =
-  outcome($P.spawn_inherit_env(bp, argv, $P.dev_null(), $P.dev_null(), $P.dev_null()))
+fn run {lp:agz}{np:pos}{cs:$A.cells}{k:nat | k < np}
+  (nul: $P.NUL_AT(cs, np, k) | bp: !$A.cborrow(lp, np, cs), argv: $L.listv($P.arg_entry)): int =
+  outcome($P.spawn_inherit_env(nul | bp, argv, $P.dev_null(), $P.dev_null(), $P.dev_null()))
 
-fn run_with {lp:agz} (bp: !$A.borrow(byte, lp, 524288), argv: $L.listv($P.arg_entry),
+fn run_with {lp:agz}{np:pos}{cs:$A.cells}{k:nat | k < np}
+  (nul: $P.NUL_AT(cs, np, k) | bp: !$A.cborrow(lp, np, cs), argv: $L.listv($P.arg_entry),
   extra: $L.listv($P.arg_entry)): int =
-  outcome($P.spawn_inherit_env_with(bp, argv, extra, $P.dev_null(), $P.dev_null(), $P.dev_null()))
+  outcome($P.spawn_inherit_env_with(nul | bp, argv, extra, $P.dev_null(), $P.dev_null(), $P.dev_null()))
 
-fn run_envp {lp:agz} (bp: !$A.borrow(byte, lp, 524288), argv: $L.listv($P.arg_entry),
+fn run_envp {lp:agz}{np:pos}{cs:$A.cells}{k:nat | k < np}
+  (nul: $P.NUL_AT(cs, np, k) | bp: !$A.cborrow(lp, np, cs), argv: $L.listv($P.arg_entry),
   envp: $L.listv($P.arg_entry)): int =
-  outcome($P.spawn(bp, argv, envp, $P.dev_null(), $P.dev_null(), $P.dev_null()))
+  outcome($P.spawn(nul | bp, argv, envp, $P.dev_null(), $P.dev_null(), $P.dev_null()))
 
 implement main0 () = let
-  var pb = $B.create()
-  val () = $B.bput(pb, "/bin/sh")
-  val () = $B.put_char(pb, 0)
-  val @(pa, _) = $B.to_arr(pb)
-  val @(fp, bp) = $A.freeze<byte>(pa)
+  val (nul | pa) = $P.path_of_string("/bin/sh")
+  val @(fp, bp) = $A.barr_freeze(pa)
 
   (* an empty argument, a one-byte array, arrays of other capacities,
      in one list: sh -c SCRIPT sh a bc def "" *)
-  val mixed = run(bp, sh_c("test $# -eq 4 && test \"$1$2$3\" = abcdef && test -z \"$4\"",
+  val mixed = run(nul | bp,sh_c("test $# -eq 4 && test \"$1$2$3\" = abcdef && test -z \"$4\"",
     $L.list_vt_cons(arg_exact(), $L.list_vt_cons(arg("bc"),
     $L.list_vt_cons(arg_old("def"), $L.list_vt_cons(arg_empty(), $L.list_vt_nil()))))))
 
@@ -115,40 +115,40 @@ implement main0 () = let
      "sh" are 3 + 3 + 14 + 3 = 23; five arguments of 100000 bytes are 5 *
      100001 = 500005; the sixth is m bytes and its NUL. 23 + 500005 + m +
      1 = 524287 for m = 24258 *)
-  val at_limit = run(bp, sh_c("test $# -eq 6", $L.list_vt_cons(as_of(24258), repeat(5, 100000, $L.list_vt_nil()))))
-  val over_limit = run(bp, sh_c("test $# -eq 6", $L.list_vt_cons(as_of(24259), repeat(5, 100000, $L.list_vt_nil()))))
+  val at_limit = run(nul | bp,sh_c("test $# -eq 6", $L.list_vt_cons(as_of(24258), repeat(5, 100000, $L.list_vt_nil()))))
+  val over_limit = run(nul | bp,sh_c("test $# -eq 6", $L.list_vt_cons(as_of(24259), repeat(5, 100000, $L.list_vt_nil()))))
   (* the same arguments in arrays of the old size *)
-  val at_limit_old = run(bp, sh_c("test $# -eq 6", $L.list_vt_cons(as_old(24258), $L.list_vt_cons(as_old(100000),
+  val at_limit_old = run(nul | bp,sh_c("test $# -eq 6", $L.list_vt_cons(as_old(24258), $L.list_vt_cons(as_old(100000),
     $L.list_vt_cons(as_old(100000), $L.list_vt_cons(as_old(100000), $L.list_vt_cons(as_old(100000),
     $L.list_vt_cons(as_old(100000), $L.list_vt_nil()))))))))
 
   (* one argument of 524288 bytes, the most an entry's array holds: refused *)
-  val whole = run(bp, sh_c("true", $L.list_vt_cons(as_of(524288), $L.list_vt_nil())))
-  val whole_old = run(bp, sh_c("true", $L.list_vt_cons(as_old(524288), $L.list_vt_nil())))
+  val whole = run(nul | bp,sh_c("true", $L.list_vt_cons(as_of(524288), $L.list_vt_nil())))
+  val whole_old = run(nul | bp,sh_c("true", $L.list_vt_cons(as_old(524288), $L.list_vt_nil())))
 
   (* the environment entries: spawn_inherit_env_with adds them, spawn
      gives the child exactly them; the same limit *)
-  val v_at = run_with(bp, sh_c("test ${#V3} -eq 131067 && test ${#V0} -eq 131068", $L.list_vt_nil()),
+  val v_at = run_with(nul | bp,sh_c("test ${#V3} -eq 131067 && test ${#V0} -eq 131068", $L.list_vt_nil()),
     $L.list_vt_cons(var_of("V0=", 131068), $L.list_vt_cons(var_of("V1=", 131068),
     $L.list_vt_cons(var_of("V2=", 131068), $L.list_vt_cons(var_of("V3=", 131067), $L.list_vt_nil())))))
-  val v_over = run_with(bp, sh_c("true", $L.list_vt_nil()),
+  val v_over = run_with(nul | bp,sh_c("true", $L.list_vt_nil()),
     $L.list_vt_cons(var_of("V0=", 131068), $L.list_vt_cons(var_of("V1=", 131068),
     $L.list_vt_cons(var_of("V2=", 131068), $L.list_vt_cons(var_of("V3=", 131068), $L.list_vt_nil())))))
-  val e_at = run_envp(bp, sh_c("test ${#V3} -eq 131067 && test ${#V0} -eq 131068", $L.list_vt_nil()),
+  val e_at = run_envp(nul | bp,sh_c("test ${#V3} -eq 131067 && test ${#V0} -eq 131068", $L.list_vt_nil()),
     $L.list_vt_cons(var_of("V0=", 131068), $L.list_vt_cons(var_of("V1=", 131068),
     $L.list_vt_cons(var_of("V2=", 131068), $L.list_vt_cons(var_of("V3=", 131067), $L.list_vt_nil())))))
-  val e_over = run_envp(bp, sh_c("true", $L.list_vt_nil()),
+  val e_over = run_envp(nul | bp,sh_c("true", $L.list_vt_nil()),
     $L.list_vt_cons(var_of("V0=", 131068), $L.list_vt_cons(var_of("V1=", 131068),
     $L.list_vt_cons(var_of("V2=", 131068), $L.list_vt_cons(var_of("V3=", 131068), $L.list_vt_nil())))))
   (* a single variable of 524288 bytes *)
-  val e_whole = run_envp(bp, sh_c("true", $L.list_vt_nil()),
+  val e_whole = run_envp(nul | bp,sh_c("true", $L.list_vt_nil()),
     $L.list_vt_cons(as_of(524288), $L.list_vt_nil()))
   (* variables of arrays of every capacity, empty list and empty value *)
-  val e_empty = run_envp(bp, sh_c("test -z \"$V\" && test \"$W\" = a", $L.list_vt_nil()),
+  val e_empty = run_envp(nul | bp,sh_c("test -z \"$V\" && test \"$W\" = a", $L.list_vt_nil()),
     $L.list_vt_cons(arg("V="), $L.list_vt_cons(arg("W=a"), $L.list_vt_nil())))
 
-  val () = $A.drop<byte>(fp, bp)
-  val () = $A.free<byte>($A.thaw<byte>(fp))
+  val () = $A.cborrow_drop(fp, bp)
+  val () = $A.barr_free($A.barr_thaw(fp))
 in
   if mixed <> 0 then let
     val () = println! ("FAIL argsizes: mixed capacities gave ", mixed)
