@@ -1,0 +1,10 @@
+[package]
+name = "nulpath"
+kind = "bin"
+
+[dependencies]
+"array" = ""
+"builder" = ""
+"list" = ""
+"process" = ""
+"result" = ""
