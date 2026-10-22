@@ -18,16 +18,23 @@ fn finish {sin,sout,serr:bool}
     end
   | ~$R.err(_) => ()
 
-(* The NUL of one path does not serve another: the proof names the cells
-   of the path made by path_of_string_proved, and this array holds other cells *)
-implement main0 () = let
-  val (nul | pa) = $P.path_of_string_proved("/bin/sh")
-  val (_ | other) = $A.barr_of_arr($A.alloc<byte>(8))
+(* The NUL is set in one array of n bytes, and the spawn borrows another
+   array of the same n bytes: the two arrays differ only in their cells, so
+   the one constraint that fails is that the cells are the same. *)
+fn spawn_other {n:pos | n <= 1048576} (n: int n): void = let
+  val (cells | a) = $A.barr_alloc(n)
+  val (set | a) = $A.barr_set(a, n - 1, 0)
+  prval len_ok = $A.setc_len(set, cells)
+  prval nul_ok = $A.setc_nth_same(set)
+  prval nul = $P.NUL_mk(len_ok, nul_ok)
+  val (_ | other) = $A.barr_alloc(n)
   val @(fz, cb) = $A.barr_freeze(other)
   val r = $P.spawn_inherit_env_proved(nul | cb, $L.list_vt_nil{$P.arg_entry}(),
     $P.dev_null(), $P.dev_null(), $P.dev_null())
   val () = finish(r)
   val () = $A.cborrow_drop(fz, cb)
   val () = $A.barr_free($A.barr_thaw(fz))
-  val () = $A.barr_free(pa)
+  val () = $A.barr_free(a)
 in () end
+
+implement main0 () = spawn_other(8)
