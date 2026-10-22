@@ -42,7 +42,20 @@ proved spawns take the proof and a `cborrow(lp, np, cs)` of the same cells
 relies on. `NUL_AT` is a dataprop, not linear, so one proof serves each
 spawn of the path. Rejected by `tests/static/reject/`: a cell that is not
 zero (`nul-not-zero`), a NUL of another array (`nul-other-array`), a byte
-past the array (`index-past-end`). `tests/dynamic/oldspawn` calls each of the
+past the array (`index-past-end`). `nul-other-array` sets the NUL in one
+`barr_alloc(n)` array and borrows a second `barr_alloc(n)` array of the same
+`n`, so the arrays differ only in their cells (they used to differ in size
+too, which alone would reject it) and the one failing constraint is that the
+cells are the same; its control is `accept/nul-same-array`, the same program
+borrowing the NUL's own array. Every reject has an `expect` (the function, the
+line and patsopt's error word for word, `tests/static/expect.py`, as sha256's,
+array's and arith's, process#63): a reject that fails for another constraint
+(the `n <= 1048576` bound of `barr_alloc`) fails the run. `tests/dynamic/nulpath`
+spawns with a 1-byte path (`"x"`, spawn's ENOENT, 1002: a NUL at the wrong
+byte gives EACCES, 1013) and a path with an early NUL (`"/bin/sh"`, a zero,
+`"junk"`: the C reads `/bin/sh` and the child exits 4), under valgrind. The
+path at the old 524288 bound is not tested yet: it needs a safe constructor of
+a string of a run-time length (process#70). `tests/dynamic/oldspawn` calls each of the
 three unproved forms, so an edit cannot drop them without a failing test.
 
 The name: a stricter variant is added beside the plain one with a word that

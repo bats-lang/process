@@ -52,7 +52,9 @@ BATS_POSITION = re.compile(
     r'^\s*--> (?P<path>\S+\.bats): \d+\(line=(?P<line>\d+), offs=\d+\) -- ')
 # What ends an error's added lines: patsopt's summary, its exit, bats's
 # own lines
-AFTER = re.compile(r'^(typechecking has failed|exit\(ATS\)|patsopt\(|error:|warning:|built |check |fetched |wrote )')
+AFTER = re.compile(r'^(typechecking has failed|exit\(ATS\)|patsopt\(|error:|warning:|built |check |fetched |wrote |\S+\.bats: \d+\(line=\d+, offs=\d+\) -- \d+\(line=\d+, offs=\d+\): warning)')
+# (a warning of patsopt's with a position ends an error's lines too: it
+# holds the machine's path and is not part of the error)
 DECLARATION = re.compile(
     r'^(?:fn|fun|fnx|prfn|prfun|implement|val|var|and)\s+'
     r'(?:\{[^}]*\}\s*)*(?P<name>[A-Za-z_][A-Za-z0-9_]*)')

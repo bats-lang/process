@@ -64,6 +64,12 @@ class Expect(unittest.TestCase):
         want = GOOD.replace('S2Eeqeq(S2Eintinf(1); S2Eintinf(0))', 'S2Eexi(d(14465); ; S2Eeqeq(S2Eintinf(1); S2Eintinf(0)))')
         self.assertIn('not the one expected', self.run_case(want, log))
 
+    def test_positioned_warning_is_not_part_of_the_error(self):
+        # patsopt's warning after an error holds the machine's path
+        warning = '/w/src/bin/main.bats: 120(line=7, offs=3) -- 121(line=7, offs=4): warning(3): the constraint cannot be translated\n'
+        log = LOG.replace(TAIL, warning + TAIL)
+        self.assertIsNone(self.run_case(GOOD, log))
+
     def test_no_expect(self):
         self.assertEqual(self.run_case(None, LOG), 'it has no expect')
 
