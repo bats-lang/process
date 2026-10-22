@@ -54,8 +54,10 @@ array's and arith's, process#63): a reject that fails for another constraint
 spawns with a 1-byte path (`"x"`, spawn's ENOENT, 1002: a NUL at the wrong
 byte gives EACCES, 1013) and a path with an early NUL (`"/bin/sh"`, a zero,
 `"junk"`: the C reads `/bin/sh` and the child exits 4), under valgrind. The
-path at the old 524288 bound is not tested yet: it needs a safe constructor of
-a string of a run-time length (process#70). `tests/dynamic/oldspawn` calls each of the
+path at the old 524288 bound is a third case there, made on the array path the
+proved spawns take (`barr_alloc`, a NUL at byte 524287, every other byte set with
+the NUL's `NTH` kept by `setc_nth_other`; no string is needed): the kernel
+refuses it as too long, 1036; a NUL moved to byte 0 gives 1013. `tests/dynamic/oldspawn` calls each of the
 three unproved forms, so an edit cannot drop them without a failing test.
 
 The name: a stricter variant is added beside the plain one with a word that
