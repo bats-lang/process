@@ -38,7 +38,7 @@ for kind in accept reject; do
     if [ "$kind" = accept ] && [ "$status" = pass ]; then
       echo "ok   accept/$n"
     elif [ "$kind" = reject ] && [ "$status" = fail ] \
-         && python3 -I "$ROOT/tests/static/expect.py" "$d" "$log" > "$TMP/$n.expect" 2>&1; then
+         && PYTHONDONTWRITEBYTECODE=1 python3 -I "$ROOT/tests/static/expect.py" "$d" "$log" > "$TMP/$n.expect" 2>&1; then
       echo "ok   reject/$n"
     elif [ "$kind" = reject ] && [ "$status" = fail ]; then
       echo "FAIL reject/$n: rejected, but not as its expect says: $(cat "$TMP/$n.expect")"; tail -8 "$log"; fail=1
