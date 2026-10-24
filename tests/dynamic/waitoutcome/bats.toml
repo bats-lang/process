@@ -1,0 +1,10 @@
+[package]
+name = "waitoutcome"
+kind = "bin"
+
+[dependencies]
+"array" = ""
+"builder" = ""
+"list" = ""
+"process" = ""
+"result" = ""
