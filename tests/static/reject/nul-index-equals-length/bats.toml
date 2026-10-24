@@ -1,0 +1,7 @@
+[package]
+name = "nul_index_equals_length"
+kind = "bin"
+
+[dependencies]
+"array" = ""
+"process" = ""

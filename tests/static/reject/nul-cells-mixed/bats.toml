@@ -1,0 +1,9 @@
+[package]
+name = "nul_cells_mixed"
+kind = "bin"
+
+[dependencies]
+"array" = ""
+"list" = ""
+"process" = ""
+"result" = ""
