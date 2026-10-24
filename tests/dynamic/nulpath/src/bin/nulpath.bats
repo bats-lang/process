@@ -17,10 +17,16 @@
    row 3), made on the array path the proved spawns take (no string: a
    barr_alloc, a NUL at byte 524287, every other byte set to 'a' after a
    slash, the NUL's NTH kept through each set by setc_nth_other), so the C
-   string is 524287 bytes and the kernel refuses it as too long, 1000 + 36
-   (ENAMETOOLONG on Linux), not E2BIG for the path. Mutants (each applied and
+   string is 524287 bytes and the kernel refuses it as too long (ENAMETOOLONG),
+   not E2BIG for the path. ENAMETOOLONG is 36 on Linux and 63 on macOS and the
+   BSDs, so the case holds no number: it spawns a second path that is too long
+   on every platform (bound_path(5000, 4999), one 4999-byte component, past
+   NAME_MAX and PATH_MAX), takes that status as the platform's own
+   ENAMETOOLONG (1036 on Linux, bats-lang/process#72), and old_bound must equal it
+   (the reference must also be a spawn errno, not 1002 or 1013). Mutants (each applied and
    restored): the NUL at byte 524287 moved to byte 0 (bound_path(524288, 0)):
-   the C string is empty, old_bound=1013 (EACCES), not 1036; path_of_string_proved writing its NUL at
+   the C string is empty, old_bound=1013 (EACCES), not too_long;
+   path_of_string_proved writing its NUL at
    byte 0: one_byte and early are 1013. A status is the child's exit code, or
    1000 + spawn's errno. *)
 fn arg {sn:nat | sn <= 1024} (s: string sn): $P.arg_entry = let
@@ -85,9 +91,14 @@ implement main0 () = let
   val one_byte = run_path("x", $L.list_vt_cons(arg("x"), $L.list_vt_nil()))
   val early = run_path("/bin/sh\000junk", sh_c("exit 4"))
   val old_bound = bound_path(524288, 524287)
+  (* the platform's own ENAMETOOLONG: a 4999-byte name in one component is
+     past NAME_MAX (255 on Linux, macOS and the BSDs) and PATH_MAX, so the
+     platform answers its own number for it; old_bound must be that number *)
+  val too_long = bound_path(5000, 4999)
+  val too_long_is_class = too_long > 1000 && too_long != 1013 && too_long != 1002
 in
-  if one_byte = 1002 && early = 4 && old_bound = 1036 then println! ("nulpath: all cases pass")
+  if one_byte = 1002 && early = 4 && too_long_is_class && old_bound = too_long then println! ("nulpath: all cases pass")
   else let
-    val () = println! ("FAIL nulpath: one_byte=", one_byte, " early=", early, " old_bound=", old_bound)
+    val () = println! ("FAIL nulpath: one_byte=", one_byte, " early=", early, " old_bound=", old_bound, " too_long=", too_long)
   in exit_void(1) end
 end
