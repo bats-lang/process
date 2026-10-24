@@ -279,6 +279,24 @@ static int _proc_try_wait(int pid) {
   if (WIFEXITED(status)) return WEXITSTATUS(status);
   return -1;
 }
+
+/* child_wait_outcome (process#52): the wait status decoded by the platform's
+   own macros, the kind returned and its number written to *number.
+   kind 0 exited (number: exit status), 1 ended by a signal (number: the
+   signal), 2 waitpid failed (number: errno), 3 a status that is neither
+   (number: the raw status), 4 no child has ended yet (WNOHANG only). */
+static int _proc_wait_outcome(int pid, int nohang, int *number) {
+  int status = 0;
+  int r;
+  do { r = waitpid(pid, &status, nohang ? WNOHANG : 0); }
+  while (r < 0 && errno == EINTR);
+  if (r < 0) { *number = errno; return 2; }
+  if (r == 0) { *number = 0; return 4; }
+  if (WIFEXITED(status)) { *number = WEXITSTATUS(status); return 0; }
+  if (WIFSIGNALED(status)) { *number = WTERMSIG(status); return 1; }
+  *number = status;
+  return 3;
+}
 #endif
 %}
 end
@@ -347,8 +365,34 @@ end
    Public API
    ============================================================ *)
 
+(* How a waited child ended (process#52), each outcome its own constructor.
+   child_exited: it exited with that status. child_signaled: a signal with
+   that number ended it (WTERMSIG: SIGKILL is 9, SIGTERM 15; a shell reports
+   128 + n). child_wait_failed: waitpid failed with that errno, so nothing is
+   known of the child. child_wait_unexpected: waitpid answered with that raw
+   status, which is neither an exit nor a signal. *)
+#pub datavtype child_outcome =
+  | child_exited of (int)
+  | child_signaled of (int)
+  | child_wait_failed of (int)
+  | child_wait_unexpected of (int)
+
+(* The answer of a wait that does not block: no child end yet, or an outcome. *)
+#pub datavtype child_poll =
+  | child_running of ()
+  | child_ended of (child_outcome)
+
+(* Waits for the child and says how it ended; it consumes the child. *)
+#pub fn child_wait_outcome(c: child): child_outcome
+
+(* Asks without blocking whether the child has ended; an ended child is
+   reaped, as child_try_wait does. *)
+#pub fn child_try_wait_outcome(c: !child): child_poll
+
+(* Deprecated, kept for compatibility: wait/signal folds a signal into a failed wait, process#81 removes it; use child_wait_outcome. *)
 #pub fn child_wait(c: child): $R.result(int, int)
 
+(* Deprecated, kept for compatibility: wait/signal folds a signal into none, process#81 removes it; use child_try_wait_outcome. *)
 #pub fn child_try_wait(c: !child): $R.option(int)
 
 #pub fn child_pid(c: !child): int
@@ -599,6 +643,30 @@ implement child_try_wait(c) = let
 in
   if status >= 0 then $R.some(status)
   else $R.none()
+end
+
+implement child_wait_outcome(c) = let
+  val+ ~child_mk(pid) = c
+  var number: int = 0
+  val kind = $UNSAFE begin $extfcall(int, "_proc_wait_outcome", pid, 0, addr@number) end
+in
+  if kind = 0 then child_exited(number)
+  else if kind = 1 then child_signaled(number)
+  else if kind = 2 then child_wait_failed(number)
+  else child_wait_unexpected(number)
+end
+
+implement child_try_wait_outcome(c) = let
+  val+ @child_mk(pid) = c
+  var number: int = 0
+  val kind = $UNSAFE begin $extfcall(int, "_proc_wait_outcome", pid, 1, addr@number) end
+  prval () = fold@(c)
+in
+  if kind = 4 then child_running()
+  else if kind = 0 then child_ended(child_exited(number))
+  else if kind = 1 then child_ended(child_signaled(number))
+  else if kind = 2 then child_ended(child_wait_failed(number))
+  else child_ended(child_wait_unexpected(number))
 end
 
 implement child_pid(c) = let

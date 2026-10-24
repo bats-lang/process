@@ -1,0 +1,9 @@
+[package]
+name = "outcome_dropped"
+kind = "bin"
+
+[dependencies]
+"array" = ""
+"list" = ""
+"process" = ""
+"result" = ""

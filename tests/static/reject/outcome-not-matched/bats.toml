@@ -1,0 +1,9 @@
+[package]
+name = "outcome_not_matched"
+kind = "bin"
+
+[dependencies]
+"array" = ""
+"list" = ""
+"process" = ""
+"result" = ""
