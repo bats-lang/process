@@ -116,3 +116,34 @@ that would move instead of moving it: move it in a pull request of its
 own. A pull request that needs newer packages runs `bats lock
 --repository <dir>` and commits `bats.lock` (and
 `.github/repository-version`) with the change.
+
+## The proofs are mutation-checked under the infinite-precision solver (bats-lang/quire#594)
+
+The 32-bit solver can make a proof's context contradictory, so a lemma then proves nothing; CI runs
+the GMP build (the bats setup action runs `bats ats2 install`), so a check of the proofs is made
+with that build as `--ats-home`. quire's `tests/static/mutation_check.py` (from a clone of
+bats-lang/quire) takes the statement of each `prfun`, `prfn` and `primplement` of a module, makes it
+false, and the compiler must reject it:
+
+```
+python3 -B -I quire/tests/static/mutation_check.py --root . --run WORK --ats-home GMP_HOME/.bats/ats2 \
+  --inplace src/lib.bats
+```
+
+`src/lib.bats` has no lemma of its own: its one proof is the dataprop `NUL_AT`, whose constructor
+`NUL_mk` joins the array package's lemmas (`CLEN`, `NTH`), so the checker finds nothing to mutate
+("no lemma to mutate"). What guards `NUL_AT` instead is a reject fixture for each way to break it,
+in `tests/static/reject/`, each with an exact `expect` (`tests/static/expect.py`): the zero (`nul-not-zero`),
+the cells of the length against the cells of the zero (`nul-cells-mixed`), the guard `k < n`
+(`nul-index-equals-length`), a byte past the array (`index-past-end`), and, for each of the three
+proved spawns, a NUL of another array than the path's (`nul-other-array`, `nul-other-array-spawn`,
+`nul-other-array-env-with`), each with its control in `tests/static/accept/`. The fixtures
+are the mutants of `NUL_AT` and of the spawns' types: weaken the dataprop (free the value, free
+the cells, drop the guard) or a spawn's link of the proof to the path, and the fixture for that
+link is accepted or fails its `expect`, which fails the run.
+
+A new `prfun`, `prfn` or `primplement` is run through the checker (an accepted mutant that is
+equivalent is explained in a `--known` file, `tests/static/mutation_known.txt`, as gestures' is),
+and a proof that is a constructor's guard or a signature's link gets a reject fixture that fails for
+that one line. `tests/static/run.sh` runs the scripts with `python3 -B -I`, so no `__pycache__` is
+written into the tree that `bats upload` (its last step) needs clean.

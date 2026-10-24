@@ -1,0 +1,9 @@
+[package]
+name = "nul_other_array_spawn"
+kind = "bin"
+
+[dependencies]
+"array" = ""
+"list" = ""
+"process" = ""
+"result" = ""
