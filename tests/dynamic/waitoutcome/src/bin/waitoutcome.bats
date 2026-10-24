@@ -31,7 +31,7 @@ fn poll_code (p: $P.child_poll): int =
   | ~$P.child_ended(o) => code(o)
 
 (* /bin/sh -c script, with a pipe for its stdin *)
-fn launch {sn:nat | sn <= 1024} (script: string sn): $P.spawn_pipes(true, false, false) = let
+fn launch {sn:nat | sn <= 1024} (script: string sn): $R.result($P.spawn_pipes(true, false, false), int) = let
   val (nul | pa) = $P.path_of_string_proved("/bin/sh")
   val @(fp, bp) = $A.barr_freeze(pa)
   val argv = $L.list_vt_cons(arg("sh"), $L.list_vt_cons(arg("-c"),
@@ -40,18 +40,18 @@ fn launch {sn:nat | sn <= 1024} (script: string sn): $P.spawn_pipes(true, false,
     $P.pipe_new(), $P.dev_null(), $P.dev_null())
   val () = $A.cborrow_drop(fp, bp)
   val () = $A.barr_free($A.barr_thaw(fp))
-in
-  case+ r of
-  | ~$R.ok(sp) => sp
-  | ~$R.err(_) => exit(1)
-end
+in r end
 
-fn waited {sn:nat | sn <= 1024} (script: string sn): int = let
-  val+ ~$P.spawn_pipes_mk(c, i, o, e) = launch(script)
-  val () = $P.pipe_end_close(i)
-  val () = $P.pipe_end_close(o)
-  val () = $P.pipe_end_close(e)
-in code($P.child_wait_outcome(c)) end
+(* ~3 when the shell could not be started *)
+fn waited {sn:nat | sn <= 1024} (script: string sn): int =
+  case+ launch(script) of
+  | ~$R.ok(sp) => let
+      val+ ~$P.spawn_pipes_mk(c, i, o, e) = sp
+      val () = $P.pipe_end_close(i)
+      val () = $P.pipe_end_close(o)
+      val () = $P.pipe_end_close(e)
+    in code($P.child_wait_outcome(c)) end
+  | ~$R.err(_) => ~3
 
 (* polls until the child has ended, at most n times; -2 if it never did *)
 fun spin {n:nat} .<n>. (c: !$P.child, n: int n): int =
@@ -60,8 +60,10 @@ fun spin {n:nat} .<n>. (c: !$P.child, n: int n): int =
     val r = poll_code($P.child_try_wait_outcome(c))
   in if r = ~1 then spin(c, n - 1) else r end
 
-fn polled {sn:nat | sn <= 1024} (script: string sn): @(int, int) = let
-  val+ ~$P.spawn_pipes_mk(c, i, o, e) = launch(script)
+fn polled {sn:nat | sn <= 1024} (script: string sn): @(int, int) =
+  case+ launch(script) of
+  | ~$R.ok(sp) => let
+  val+ ~$P.spawn_pipes_mk(c, i, o, e) = sp
   (* the child waits for its stdin to end: it is running *)
   val running = poll_code($P.child_try_wait_outcome(c))
   val () = $P.pipe_end_close(i)
@@ -69,8 +71,9 @@ fn polled {sn:nat | sn <= 1024} (script: string sn): @(int, int) = let
   val () = $P.pipe_end_close(e)
   val ended = spin(c, 5000000)
   (* the poll reaped it: this wait is of a child that is gone *)
-  val _ = $P.child_wait_outcome(c)
+  val _ = code($P.child_wait_outcome(c))
 in @(running, ended) end
+  | ~$R.err(_) => @(~3, ~3)
 
 implement main0 () = let
   val exit0 = waited("exit 0")
@@ -84,7 +87,7 @@ implement main0 () = let
   val @(running2, p_kill) = polled("read x; kill -9 $$")
   val stranger = $P.child_mk(2000000000)
   val p_failed = poll_code($P.child_try_wait_outcome(stranger))
-  val _ = $P.child_wait_outcome(stranger)
+  val _ = code($P.child_wait_outcome(stranger))
   val ok = exit0 = 0 && exit7 = 7 && exit255 = 255 && killed = 1009
     && termed = 1015 && segv = 1011 && failed = 2010
     && p_failed = 2010 && running = ~1 && p_exit = 3 && running2 = ~1 && p_kill = 1009

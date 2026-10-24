@@ -16,7 +16,7 @@ fn arg {sn:nat | sn <= 1024} (s: string sn): $P.arg_entry = let
   val @(arr, len) = $B.to_arr(b)
 in @(arr, len) end
 
-fn launch {sn:nat | sn <= 1024} (script: string sn): $P.spawn_pipes(true, false, false) = let
+fn launch {sn:nat | sn <= 1024} (script: string sn): $R.result($P.spawn_pipes(true, false, false), int) = let
   val (nul | pa) = $P.path_of_string_proved("/bin/sh")
   val @(fp, bp) = $A.barr_freeze(pa)
   val argv = $L.list_vt_cons(arg("sh"), $L.list_vt_cons(arg("-c"),
@@ -25,22 +25,22 @@ fn launch {sn:nat | sn <= 1024} (script: string sn): $P.spawn_pipes(true, false,
     $P.pipe_new(), $P.dev_null(), $P.dev_null())
   val () = $A.cborrow_drop(fp, bp)
   val () = $A.barr_free($A.barr_thaw(fp))
-in
-  case+ r of
-  | ~$R.ok(sp) => sp
-  | ~$R.err(_) => exit(1)
-end
+in r end
 
-fn waited {sn:nat | sn <= 1024} (script: string sn): int = let
-  val+ ~$P.spawn_pipes_mk(c, i, o, e) = launch(script)
-  val () = $P.pipe_end_close(i)
-  val () = $P.pipe_end_close(o)
-  val () = $P.pipe_end_close(e)
-in
-  case+ $P.child_wait(c) of
-  | ~$R.ok(n) => n
-  | ~$R.err(e) => 1000 + e
-end
+(* ~3 when the shell could not be started *)
+fn waited {sn:nat | sn <= 1024} (script: string sn): int =
+  case+ launch(script) of
+  | ~$R.ok(sp) => let
+      val+ ~$P.spawn_pipes_mk(c, i, o, e) = sp
+      val () = $P.pipe_end_close(i)
+      val () = $P.pipe_end_close(o)
+      val () = $P.pipe_end_close(e)
+    in
+      case+ $P.child_wait(c) of
+      | ~$R.ok(n) => n
+      | ~$R.err(e) => 1000 + e
+    end
+  | ~$R.err(_) => ~3
 
 (* child_try_wait: ~1 while running, ~2 never ended, else its status or 1000 + err *)
 fun spin {n:nat} .<n>. (c: !$P.child, n: int n): int =
@@ -50,16 +50,19 @@ fun spin {n:nat} .<n>. (c: !$P.child, n: int n): int =
     | ~$R.some(s) => s
     | ~$R.none() => spin(c, n - 1)
 
-fn polled (): @(int, int) = let
-  val+ ~$P.spawn_pipes_mk(c, i, o, e) = launch("read x; exit 3")
+fn polled (): @(int, int) =
+  case+ launch("read x; exit 3") of
+  | ~$R.ok(sp) => let
+  val+ ~$P.spawn_pipes_mk(c, i, o, e) = sp
   val running = (case+ $P.child_try_wait(c) of
     | ~$R.some(s) => s | ~$R.none() => ~1): int
   val () = $P.pipe_end_close(i)
   val () = $P.pipe_end_close(o)
   val () = $P.pipe_end_close(e)
   val ended = spin(c, 5000000)
-  val _ = $P.child_wait(c)
+  val _ = (case+ $P.child_wait(c) of | ~$R.ok(n) => n | ~$R.err(e) => e): int
 in @(running, ended) end
+  | ~$R.err(_) => @(~3, ~3)
 
 implement main0 () = let
   val exited = waited("exit 7")
