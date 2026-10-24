@@ -86,10 +86,7 @@ constructor (`tests/static/reject/outcome-not-matched`, `outcome-dropped`;
 `accept/outcome-all`). `tests/dynamic/waitoutcome` runs real children (exit
 0, 7, 255; SIGKILL, SIGTERM, SIGSEGV; a pid that is no child, ECHILD; a child
 still running, then ended by exit and by signal) and `tests/dynamic/oldwait`
-calls each old form, so an edit cannot drop them. The C keeps the number in
-a file-level variable, as the spawn result is kept, so a process that waits
-from two threads at once could mix the number of one wait with the kind of
-another; process has no threads.
+calls each old form, so an edit cannot drop them. The C writes the number through a pointer to a local, so no state is shared between waits.
 
 ## CI is pinned
 

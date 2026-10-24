@@ -281,24 +281,20 @@ static int _proc_try_wait(int pid) {
 }
 
 /* child_wait_outcome (process#52): the wait status decoded by the platform's
-   own macros, the kind returned and its number kept for _proc_wait_number.
+   own macros, the kind returned and its number written to *number.
    kind 0 exited (number: exit status), 1 ended by a signal (number: the
    signal), 2 waitpid failed (number: errno), 3 a status that is neither
    (number: the raw status), 4 no child has ended yet (WNOHANG only). */
-static int _proc_wait_number_value = 0;
-
-static int _proc_wait_number(void) { return _proc_wait_number_value; }
-
-static int _proc_wait_outcome(int pid, int nohang) {
+static int _proc_wait_outcome(int pid, int nohang, int *number) {
   int status = 0;
   int r;
   do { r = waitpid(pid, &status, nohang ? WNOHANG : 0); }
   while (r < 0 && errno == EINTR);
-  if (r < 0) { _proc_wait_number_value = errno; return 2; }
-  if (r == 0) { _proc_wait_number_value = 0; return 4; }
-  if (WIFEXITED(status)) { _proc_wait_number_value = WEXITSTATUS(status); return 0; }
-  if (WIFSIGNALED(status)) { _proc_wait_number_value = WTERMSIG(status); return 1; }
-  _proc_wait_number_value = status;
+  if (r < 0) { *number = errno; return 2; }
+  if (r == 0) { *number = 0; return 4; }
+  if (WIFEXITED(status)) { *number = WEXITSTATUS(status); return 0; }
+  if (WIFSIGNALED(status)) { *number = WTERMSIG(status); return 1; }
+  *number = status;
   return 3;
 }
 #endif
@@ -651,8 +647,8 @@ end
 
 implement child_wait_outcome(c) = let
   val+ ~child_mk(pid) = c
-  val kind = $UNSAFE begin $extfcall(int, "_proc_wait_outcome", pid, 0) end
-  val number = $UNSAFE begin $extfcall(int, "_proc_wait_number") end
+  var number: int = 0
+  val kind = $UNSAFE begin $extfcall(int, "_proc_wait_outcome", pid, 0, addr@number) end
 in
   if kind = 0 then child_exited(number)
   else if kind = 1 then child_signaled(number)
@@ -662,8 +658,8 @@ end
 
 implement child_try_wait_outcome(c) = let
   val+ @child_mk(pid) = c
-  val kind = $UNSAFE begin $extfcall(int, "_proc_wait_outcome", pid, 1) end
-  val number = $UNSAFE begin $extfcall(int, "_proc_wait_number") end
+  var number: int = 0
+  val kind = $UNSAFE begin $extfcall(int, "_proc_wait_outcome", pid, 1, addr@number) end
   prval () = fold@(c)
 in
   if kind = 4 then child_running()
