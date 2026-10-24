@@ -66,6 +66,31 @@ what it is; array adds `barr_alloc` and `cborrow_get` beside `alloc` and
 `borrow_get`, never in place of them. `_proved` is arith's word, for a
 function whose call carries a proof.
 
+## The wait has outcome forms beside the old ones (#52, wait/signal)
+
+`child_wait` and `child_try_wait` keep their types: a child ended by a
+signal and a failed `waitpid` are both `err(-1)` (and `none`), which is why
+bats `with-env` (bats#282) exits 1 where a shell exits 128 + n. They are
+**deprecated, kept for compatibility**; process#81 removes them once every
+dependent has moved.
+
+`child_wait_outcome` and `child_try_wait_outcome` are beside them. Their
+answers are linear datatypes with a constructor for each outcome, decoded
+once in C from the platform's own macros (`WIFEXITED`/`WEXITSTATUS`,
+`WIFSIGNALED`/`WTERMSIG`): `child_exited(status)`, `child_signaled(signal)`,
+`child_wait_failed(errno)` and `child_wait_unexpected(raw status)` (neither
+an exit nor a signal), plus `child_running()` / `child_ended(outcome)` for the
+poll. `waitpid` is retried on EINTR, so an interrupted wait is not a failed
+one. No runtime check: the match is `case+`, so a caller handles each
+constructor (`tests/static/reject/outcome-not-matched`, `outcome-dropped`;
+`accept/outcome-all`). `tests/dynamic/waitoutcome` runs real children (exit
+0, 7, 255; SIGKILL, SIGTERM, SIGSEGV; a pid that is no child, ECHILD; a child
+still running, then ended by exit and by signal) and `tests/dynamic/oldwait`
+calls each old form, so an edit cannot drop them. The C keeps the number in
+a file-level variable, as the spawn result is kept, so a process that waits
+from two threads at once could mix the number of one wait with the kind of
+another; process has no threads.
+
 ## CI is pinned
 
 Every input to CI is pinned in the source (bats-lang/repository-prototype#269),
