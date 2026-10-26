@@ -88,6 +88,23 @@ constructor (`tests/static/reject/outcome-not-matched`, `outcome-dropped`;
 still running, then ended by exit and by signal) and `tests/dynamic/oldwait`
 calls each old form, so an edit cannot drop them. The C writes the number through a pointer to a local, so no state is shared between waits.
 
+## Exec replaces the process; it returns only an errno (#90)
+
+`exec_inherit_env_with(nul | path, argv, extra)` replaces the calling process by `execve` (the PATH search of
+spawn, a name without '/' is looked up on PATH), with the parent's environment plus the NAME=VALUE entries of
+`extra` (each added or replacing), and returns only when it failed: `[e:pos] int e`, the errno, so a
+success that came back cannot be typed (`tests/static/reject/exec-result-not-positive`). It is new, so
+nothing beside it is deprecated; it takes the proved path (`NUL_AT`) as `spawn_proved` does, and the NUL of
+another array is rejected (`nul-other-array-exec`, control `accept/nul-same-array-exec`). Standard streams
+and every other descriptor stay as they are; bytes this process buffered and has not written are lost (as
+Rust's `CommandExt::exec` and Go's `syscall.Exec`). An argv or extra list over `ARG_TOTAL_MAX` gives E2BIG
+before anything is changed. Trusted, as for spawn: the C (`_proc_exec`, sharing `_merged_environ` with
+`spawn_inherit_env_with`). Tested, not proved: `tests/dynamic/exec` runs the binary as its own child and checks
+that the program has the pid spawned (replaced, not forked), the environment (kept, replaced, added), stdin and
+stdout inherited, and ENOENT (2), EACCES (13) and E2BIG (7) returned with the process still alive; the three
+failures run under valgrind, which finds no leak on the failure path. bats `with-env` (bats-lang/bats#539)
+moves to it once it is published.
+
 ## CI is pinned
 
 Every input to CI is pinned in the source (bats-lang/repository-prototype#269),

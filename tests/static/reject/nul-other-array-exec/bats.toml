@@ -1,0 +1,9 @@
+[package]
+name = "nul_other_array_exec"
+kind = "bin"
+
+[dependencies]
+"array" = ""
+"list" = ""
+"process" = ""
+"result" = ""

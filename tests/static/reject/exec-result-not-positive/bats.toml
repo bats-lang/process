@@ -1,0 +1,9 @@
+[package]
+name = "exec_result_not_positive"
+kind = "bin"
+
+[dependencies]
+"array" = ""
+"list" = ""
+"process" = ""
+"result" = ""

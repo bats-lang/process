@@ -1,0 +1,12 @@
+[package]
+name = "exec"
+kind = "bin"
+
+[dependencies]
+"array" = ""
+"builder" = ""
+"env" = ""
+"file" = ""
+"list" = ""
+"process" = ""
+"result" = ""
