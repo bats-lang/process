@@ -1,0 +1,7 @@
+replaced: same pid
+env: kept new add
+stdin: got hello
+missing: exit 2
+directory: exit 13
+toobig: exit 7
+exec: all cases pass
