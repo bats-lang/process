@@ -7,19 +7,7 @@
 #use process as P
 #use result as R
 
-(* exec_inherit_env_with (process#90) replaces the process that calls it.
-   This binary runs in two roles. With no argument it is the parent: it
-   spawns itself with one argument, the case, and says what the child did.
-   With an argument it is the child of that case and calls exec.
-
-   replaced: the program exec runs has the very pid the parent spawned
-   (a fork would give another), so a signal sent to that pid reaches it.
-   env: the parent's variable is kept, one the parent set is replaced, one
-   is added. stdin: the program reads what the parent wrote to the pipe
-   that is its stdin, and its stdout is the parent's pipe.
-   missing, directory, toobig: exec returns the errno (ENOENT 2, EACCES 13,
-   E2BIG 7) and the process is still there to exit with it. Those three run
-   under valgrind, so the C's failure path is checked for leaks. *)
+(* exec-replace: the parent spawns this binary once per case and the child calls exec; detail in CLAUDE.md. *)
 
 fn arg {sn:nat | sn <= 1024} (s: string sn): $P.arg_entry = let
   var b = $B.create()
@@ -177,10 +165,10 @@ in
           val e = child(mode)
         in exit_void(e) end
       else let
-          val () = run("replaced", "p", "./dist/debug/exec", false, no_extra(), false, 1)
-          val () = run("env", "e", "./dist/debug/exec", false,
+          val () = run("replaced", "p", "valgrind", true, no_extra(), false, 1)
+          val () = run("env", "e", "valgrind", true,
             $L.list_vt_cons(arg("KEEP=kept"), $L.list_vt_cons(arg("REPL=old"), $L.list_vt_nil())), false, 2)
-          val () = run("stdin", "i", "./dist/debug/exec", false, no_extra(), true, 2)
+          val () = run("stdin", "i", "valgrind", true, no_extra(), true, 2)
           val () = run("missing", "x", "valgrind", true, no_extra(), false, 0)
           val () = run("directory", "a", "valgrind", true, no_extra(), false, 0)
           val () = run("toobig", "b", "valgrind", true, no_extra(), false, 0)

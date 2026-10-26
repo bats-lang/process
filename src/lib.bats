@@ -67,9 +67,7 @@ static void _exec_search(const char *file, char *const argv[], char *const envp[
   }
 }
 
-/* The parent's environment with the ei NAME=VALUE entries of extra added or
-   replacing (exec, process#90; spawn_inherit_env_with); malloc'd, NULL when
-   there is no memory. */
+/* exec-replace: the parent environment with the extra entries added or replacing. */
 static char **_merged_environ(const char **extra, int ei) {
   size_t n = 0, k = 0, j;
   int e;
@@ -89,10 +87,7 @@ static char **_merged_environ(const char **extra, int ei) {
   return envv;
 }
 
-/* exec (process#90): replace this process by execve of path (searched on
-   PATH as spawn does) with the arguments of argv_buf (argv_count NUL-ended
-   entries) and the parent's environment plus the extra_count entries of
-   extra_buf. Returns only on failure, with the errno (> 0). */
+/* exec-replace: execve with the PATH search, returns only the errno on failure. */
 static int _proc_exec(const char *path, const char *argv_buf, int argv_count,
                       const char *extra_buf, int extra_count) {
   int i, e;
@@ -537,15 +532,7 @@ end
    stderr_cfg: stream_config(serr))
   : $R.result(spawn_pipes(sin, sout, serr), int)
 
-(* exec (process#90): replaces this process by the program at path (a name
-   without '/' is looked up on PATH, as spawn does), with the parent's
-   environment plus the NAME=VALUE entries of extra, each added or replacing
-   that variable. Standard streams and every other open descriptor are
-   inherited as they are; bytes this process buffered and has not written are
-   lost (as Rust's CommandExt::exec and Go's syscall.Exec). It returns only on
-   failure, with the errno (> 0): ENOENT for a command found nowhere, EACCES
-   for a file that cannot be run, E2BIG (7) for an argv or extra list over
-   ARG_TOTAL_MAX bytes. Nothing was changed then; argv and extra are consumed. *)
+(* exec-replace: replaces this process, returns only an errno; detail in CLAUDE.md. *)
 #pub fn exec_inherit_env_with
   {lp:agz}{np:pos}{cs:$A.cells}{k:nat | k < np}
   (nul: NUL_AT(cs, np, k) | path: !$A.cborrow(lp, np, cs),
